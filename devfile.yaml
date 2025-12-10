@@ -1,18 +1,23 @@
 schemaVersion: 2.2.2
 metadata:
-  name: python-universal
-  displayName: Python (Universal)
-  description: Python environment using the Che Universal Developer Image (Compatible with vanilla K8s)
-  icon: https://raw.githubusercontent.com/devfile-samples/devfile-stack-icons/main/python.svg
-  tags:
-    - Python
-    - Universal
+  name: python-universal-fixed
+  displayName: Python (Universal + Fix)
+  description: Universal image running as UID 1001 to satisfy NFS and Git security.
   projectType: Python
   language: Python
+  # --- THE FIX: Align Process UID with Storage UID ---
+  attributes:
+    controller.devfile.io/pod-overrides:
+      spec:
+        securityContext:
+          runAsUser: 1001
+          runAsGroup: 0
+          fsGroup: 1001
+  # ---------------------------------------------------
 components:
   - name: tools
     container:
-      # SWITCHED TO UNIVERSAL IMAGE (Works with random UIDs)
+      # Universal Image (Includes Python, Node, etc)
       image: quay.io/devfile/universal-developer-image:ubi8-latest
       memoryLimit: 2Gi
       mountSources: true
@@ -27,6 +32,9 @@ components:
       env:
         - name: DEBUG_PORT
           value: '5858'
+        # Extra safety: Tell Git to ignore ownership issues just in case
+        - name: HOME
+          value: /projects
 commands:
   - id: pip-install-requirements
     exec:
