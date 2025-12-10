@@ -1,37 +1,22 @@
-# Modifying the default Python Sample provided by Che to change users to UID 1001
-
 schemaVersion: 2.2.2
 metadata:
-  name: python
-  displayName: Python
-  description: Python (version 3.9.x) with fixed Security Context
+  name: python-universal
+  displayName: Python (Universal)
+  description: Python environment using the Che Universal Developer Image (Compatible with vanilla K8s)
   icon: https://raw.githubusercontent.com/devfile-samples/devfile-stack-icons/main/python.svg
   tags:
     - Python
-    - Pip
-    - Flask
+    - Universal
   projectType: Python
   language: Python
-  provider: Red Hat
-  version: 2.2.0
-  # --- ADD THIS BLOCK ---
-  attributes:
-    controller.devfile.io/pod-overrides:
-      spec:
-        securityContext:
-          runAsUser: 1001
-          runAsGroup: 0
-          fsGroup: 1001
-  # ----------------------
 components:
-  - name: py
+  - name: tools
     container:
-      image: registry.access.redhat.com/ubi9/python-39:1-1743091356
-      args:
-        - tail
-        - '-f'
-        - /dev/null
+      # SWITCHED TO UNIVERSAL IMAGE (Works with random UIDs)
+      image: quay.io/devfile/universal-developer-image:ubi8-latest
+      memoryLimit: 2Gi
       mountSources: true
+      args: ['tail', '-f', '/dev/null']
       endpoints:
         - name: https-python
           targetPort: 8080
@@ -50,22 +35,15 @@ commands:
       group:
         kind: build
         isDefault: true
-      component: py
+      component: tools
   - id: run-app
     exec:
       commandLine: python app.py
       workingDir: ${PROJECT_SOURCE}
-      component: py
+      component: tools
       group:
         kind: run
         isDefault: true
-  - id: debug-py
-    exec:
-      commandLine: pip install debugpy && python -m debugpy --listen 0.0.0.0:${DEBUG_PORT} app.py
-      workingDir: ${PROJECT_SOURCE}
-      component: py
-      group:
-        kind: debug
 starterProjects:
   - name: flask-example
     description: 'Flask web framework example'
