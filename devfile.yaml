@@ -1,23 +1,33 @@
 schemaVersion: 2.2.2
 metadata:
-  name: python-universal-fixed
-  displayName: Python (Universal + Fix)
-  description: Universal image running as UID 1001 to satisfy NFS and Git security.
+  name: python-git-bypass
+  displayName: Python (Git Fix)
+  description: Python workspace with Git Dubious Ownership Bypass
   projectType: Python
   language: Python
-  # --- THE FIX: Align Process UID with Storage UID ---
   attributes:
     controller.devfile.io/pod-overrides:
       spec:
-        securityContext:
-          runAsUser: 1001
-          runAsGroup: 0
-          fsGroup: 1001
-  # ---------------------------------------------------
+        # 1. Patch the Init Container (project-clone) to ignore Git ownership errors
+        initContainers:
+        - name: project-clone
+          env:
+          - name: GIT_CONFIG_COUNT
+            value: "1"
+          - name: GIT_CONFIG_KEY_0
+            value: "safe.directory"
+          - name: GIT_CONFIG_VALUE_0
+            value: "*"
+        # 2. Try to force the Main Container to match NFS (just in case)
+        containers:
+        - name: tools
+          securityContext:
+            runAsUser: 1001
+            runAsGroup: 0
 components:
   - name: tools
     container:
-      # Universal Image (Includes Python, Node, etc)
+      # Universal Image
       image: quay.io/devfile/universal-developer-image:ubi8-latest
       memoryLimit: 2Gi
       mountSources: true
@@ -32,7 +42,6 @@ components:
       env:
         - name: DEBUG_PORT
           value: '5858'
-        # Extra safety: Tell Git to ignore ownership issues just in case
         - name: HOME
           value: /projects
 commands:
