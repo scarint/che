@@ -1,14 +1,18 @@
 schemaVersion: 2.2.2
 metadata:
-  name: python-manual-clone
-  displayName: Python (Manual Clone)
-  description: Workspace that bypasses the broken Init Container by cloning code at runtime.
+  name: python-universal
+  displayName: Python (Universal)
+  description: Python environment using the Che Universal Developer Image (Compatible with vanilla K8s)
+  icon: https://raw.githubusercontent.com/devfile-samples/devfile-stack-icons/main/python.svg
+  tags:
+    - Python
+    - Universal
   projectType: Python
   language: Python
 components:
   - name: tools
     container:
-      # Universal Image (Fixes the VS Code Identity Crash)
+      # SWITCHED TO UNIVERSAL IMAGE (Works with random UIDs)
       image: quay.io/devfile/universal-developer-image:ubi8-latest
       memoryLimit: 2Gi
       mountSources: true
@@ -23,28 +27,26 @@ components:
       env:
         - name: DEBUG_PORT
           value: '5858'
-        # Set HOME to /projects so git config writes to persistent storage
-        - name: HOME
-          value: /projects
 commands:
-  - id: init-git
+  - id: pip-install-requirements
     exec:
+      commandLine: pip install -r requirements.txt
+      workingDir: ${PROJECT_SOURCE}
+      group:
+        kind: build
+        isDefault: true
       component: tools
-      workingDir: /projects
-      commandLine: |
-        # 1. Fix the "Dubious Ownership" error
-        git config --global --add safe.directory "*"
-        
-        # 2. Clone the repo manually
-        if [ ! -d "python-ex" ]; then
-            git clone https://github.com/devfile-samples/python-ex
-        fi
   - id: run-app
     exec:
       commandLine: python app.py
-      workingDir: /projects/python-ex
+      workingDir: ${PROJECT_SOURCE}
       component: tools
       group:
         kind: run
         isDefault: true
-# NOTICE: 'starterProjects' is REMOVED to kill the init container
+starterProjects:
+  - name: flask-example
+    description: 'Flask web framework example'
+    git:
+      remotes:
+        origin: https://github.com/devfile-samples/python-ex
