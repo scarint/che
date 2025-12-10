@@ -1,33 +1,14 @@
 schemaVersion: 2.2.2
 metadata:
-  name: python-git-bypass
-  displayName: Python (Git Fix)
-  description: Python workspace with Git Dubious Ownership Bypass
+  name: python-manual-clone
+  displayName: Python (Manual Clone)
+  description: Workspace that bypasses the broken Init Container by cloning code at runtime.
   projectType: Python
   language: Python
-  attributes:
-    controller.devfile.io/pod-overrides:
-      spec:
-        # 1. Patch the Init Container (project-clone) to ignore Git ownership errors
-        initContainers:
-        - name: project-clone
-          env:
-          - name: GIT_CONFIG_COUNT
-            value: "1"
-          - name: GIT_CONFIG_KEY_0
-            value: "safe.directory"
-          - name: GIT_CONFIG_VALUE_0
-            value: "*"
-        # 2. Try to force the Main Container to match NFS (just in case)
-        containers:
-        - name: tools
-          securityContext:
-            runAsUser: 1001
-            runAsGroup: 0
 components:
   - name: tools
     container:
-      # Universal Image
+      # Universal Image (Fixes the VS Code Identity Crash)
       image: quay.io/devfile/universal-developer-image:ubi8-latest
       memoryLimit: 2Gi
       mountSources: true
@@ -42,28 +23,28 @@ components:
       env:
         - name: DEBUG_PORT
           value: '5858'
+        # Set HOME to /projects so git config writes to persistent storage
         - name: HOME
           value: /projects
 commands:
-  - id: pip-install-requirements
+  - id: init-git
     exec:
-      commandLine: pip install -r requirements.txt
-      workingDir: ${PROJECT_SOURCE}
-      group:
-        kind: build
-        isDefault: true
       component: tools
+      workingDir: /projects
+      commandLine: |
+        # 1. Fix the "Dubious Ownership" error
+        git config --global --add safe.directory "*"
+        
+        # 2. Clone the repo manually
+        if [ ! -d "python-ex" ]; then
+            git clone https://github.com/devfile-samples/python-ex
+        fi
   - id: run-app
     exec:
       commandLine: python app.py
-      workingDir: ${PROJECT_SOURCE}
+      workingDir: /projects/python-ex
       component: tools
       group:
         kind: run
         isDefault: true
-starterProjects:
-  - name: flask-example
-    description: 'Flask web framework example'
-    git:
-      remotes:
-        origin: https://github.com/devfile-samples/python-ex
+# NOTICE: 'starterProjects' is REMOVED to kill the init container
