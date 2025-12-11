@@ -1,59 +1,45 @@
 schemaVersion: 2.2.2
 metadata:
-  name: intellij-projector-fix
-  displayName: IntelliJ IDEA (Projector Fix)
+  name: intellij-native
+  displayName: IntelliJ (Native Image)
   attributes:
-    # We do NOT define an editor here. We are installing it manually.
     controller.devfile.io/devworkspace-config:
       workspace:
         progressTimeout: "15m"
 components:
   - name: tools
     container:
-      image: quay.io/devfile/universal-developer-image:ubi8-latest
-      memoryLimit: 3Gi
+      # Use the official image. It has the IDE and correct Python built-in.
+      image: jetbrains/projector-idea-c
+      memoryLimit: 4Gi
       mountSources: true
-      # --- THE STARTUP SCRIPT ---
+      # --- THE COMPATIBILITY LAYER ---
+      # We override the entrypoint to inject our Identity Fix
       command: ["/bin/sh", "-c"]
       args:
         - |
-          # 1. FIX IDENTITY (The "Golden" Patch)
+          # 1. FIX IDENTITY (The "Victory" Patch)
+          # We check if 1234 exists. If not, we add it to /etc/passwd.
+          # We use /home/projector-user because that's where the IDE lives in this image.
           if ! grep -q "1234" /etc/passwd; then
             echo "Fixing Identity for UID 1234..."
-            echo "user:x:1234:0:User:${HOME}:/bin/bash" >> /etc/passwd
+            echo "user:x:1234:0:User:/home/projector-user:/bin/bash" >> /etc/passwd
           fi
           
-          # 2. CLEAR PORT 8887 (Kill Zombies)
-          fuser -k 8887/tcp || true
+          # 2. FIX PERMISSIONS (Since we are hijacking the user)
+          # Ensure we own the config directory
+          chown -R 1234:0 /home/projector-user || true
           
-          # 3. INSTALL DEPENDENCIES (Required for Java GUI)
-          # We need to be root to install rpms, or use sudo if available.
-          # UDI usually allows sudo for the default user.
-          echo "Installing GUI libraries..."
-          sudo dnf install -y libXext libXrender libXtst libXi freetype
+          # 3. CLEAR PORT 8887
+          # (fuser might not be in this image, so we use a fallback or skip)
           
-          # 4. INSTALL PROJECTOR (The Web Renderer)
-          if ! command -v projector &> /dev/null; then
-             echo "Installing JetBrains Projector..."
-             pip3 install projector-installer --user
-             export PATH=$PATH:$HOME/.local/bin
-          fi
-          export PATH=$PATH:$HOME/.local/bin
-          
-          # 5. INSTALL INTELLIJ (If not present)
-          # We create a config named 'IntelliJ' automatically
-          if ! projector config show IntelliJ &> /dev/null; then
-             echo "Downloading IntelliJ IDEA Community..."
-             # Auto-accept license, use port 8887
-             projector install --name IntelliJ --ide IDEA_COMMUNITY --port 8887 --accept-license --hostname 0.0.0.0
-          fi
-          
-          # 6. RUN IT
-          echo "Starting IntelliJ Projector on 0.0.0.0:8887..."
-          projector run IntelliJ
-      # --------------------------
+          # 4. START PROJECTOR
+          # We launch the pre-installed server manually
+          echo "Starting IntelliJ..."
+          # The image puts the start script here:
+          /run-projector.sh
+      # -------------------------------
       endpoints:
-        # The Backdoor Route (Port 8887)
         - name: intellij-direct
           targetPort: 8887
           attributes:
@@ -62,13 +48,13 @@ components:
             secure: "false"
             discoverable: "true"
       env:
-        - name: HOME
-          value: /projects
+        # Force the config to store data in /projects so it persists
+        - name: ORG_JETBRAINS_PROJECTOR_SERVER_CONFIG_DIR
+          value: /projects/.projector/config
 commands:
-  - id: run-app
+  - id: log-info
     exec:
-      commandLine: python app.py
-      workingDir: ${PROJECT_SOURCE}
+      commandLine: id && ls -la /projects
       component: tools
       group:
         kind: run
