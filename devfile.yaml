@@ -1,42 +1,47 @@
 schemaVersion: 2.2.2
 metadata:
-  name: python-configmap-fix-v2
-  displayName: Python (ConfigMap Fix V2)
+  name: python-configmap-override
+  displayName: Python (ConfigMap Override)
   attributes:
     app.che.eclipse.org/editor: che-incubator/che-code/latest
+    # --- THE HACK SECTION ---
+    controller.devfile.io/pod-overrides:
+      spec:
+        # 1. Define the Volume (pointing to your ConfigMap)
+        volumes:
+        - name: identity-hack
+          configMap:
+            name: fake-passwd
+        # 2. Inject configuration into the 'tools' container
+        containers:
+        - name: tools
+          # Mount the fake passwd file
+          volumeMounts:
+          - name: identity-hack
+            mountPath: /etc/config
+          # Set the environment variables to use it
+          env:
+          - name: LD_PRELOAD
+            value: "/usr/lib64/libnss_wrapper.so"
+          - name: NSS_WRAPPER_PASSWD
+            value: "/etc/config/passwd"
+          - name: NSS_WRAPPER_GROUP
+            value: "/etc/config/group"
+          - name: HOME
+            value: /projects
 components:
   - name: tools
     container:
+      # Universal Image
       image: quay.io/devfile/universal-developer-image:ubi8-latest
       memoryLimit: 2Gi
       mountSources: true
+      # Standard Keep-Alive
       args: ['tail', '-f', '/dev/null']
       endpoints:
         - name: https-python
           targetPort: 8080
           protocol: https
-      env:
-        # 1. Force Identity Spoofing
-        - name: LD_PRELOAD
-          value: "/usr/lib64/libnss_wrapper.so"
-        - name: NSS_WRAPPER_PASSWD
-          value: "/etc/config/passwd"
-        - name: NSS_WRAPPER_GROUP
-          value: "/etc/config/group"
-        - name: HOME
-          value: /projects
-      volumeMounts:
-        # 2. Mount the ConfigMap files
-        - name: identity-volume
-          path: /etc/config
-  - name: identity-volume
-    kubernetes:
-      # THE FIX: This pipe (|) makes it a string, satisfying the schema
-      inlined: |
-        apiVersion: v1
-        kind: ConfigMap
-        metadata:
-          name: fake-passwd
 commands:
   - id: run-app
     exec:
