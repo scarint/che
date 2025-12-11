@@ -1,10 +1,9 @@
 schemaVersion: 2.2.2
 metadata:
-  name: python-configmap-fix
-  displayName: Python (ConfigMap Fix)
+  name: python-configmap-fix-v2
+  displayName: Python (ConfigMap Fix V2)
   attributes:
     app.che.eclipse.org/editor: che-incubator/che-code/latest
-    # Bypass the broken timeout config
 components:
   - name: tools
     container:
@@ -17,7 +16,7 @@ components:
           targetPort: 8080
           protocol: https
       env:
-        # 1. Force the container to use our fake identity files
+        # 1. Force Identity Spoofing
         - name: LD_PRELOAD
           value: "/usr/lib64/libnss_wrapper.so"
         - name: NSS_WRAPPER_PASSWD
@@ -27,12 +26,13 @@ components:
         - name: HOME
           value: /projects
       volumeMounts:
-        # 2. Mount the ConfigMap we created in Step 1
+        # 2. Mount the ConfigMap files
         - name: identity-volume
           path: /etc/config
   - name: identity-volume
     kubernetes:
-      inlined:
+      # THE FIX: This pipe (|) makes it a string, satisfying the schema
+      inlined: |
         apiVersion: v1
         kind: ConfigMap
         metadata:
