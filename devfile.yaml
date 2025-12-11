@@ -1,23 +1,31 @@
 schemaVersion: 2.2.2
 metadata:
-  name: python-universal
-  displayName: Python (Universal)
-  description: Python environment using the Che Universal Developer Image (Compatible with vanilla K8s)
-  icon: https://raw.githubusercontent.com/devfile-samples/devfile-stack-icons/main/python.svg
-  tags:
-    - Python
-    - Universal
+  name: python-final-10001
+  displayName: Python (Alignment 10001)
   projectType: Python
   language: Python
   attributes:
-    controller.devfile.io/scc-user-id: "1234"
+    # 1. Force Timeout to 15m (Safety net)
     controller.devfile.io/devworkspace-config:
       workspace:
         progressTimeout: "15m"
+    # 2. Force Identity to 10001 (Matches the 'user' in the image)
+    controller.devfile.io/pod-overrides:
+      spec:
+        securityContext:
+          runAsUser: 10001
+          runAsGroup: 0
+          fsGroup: 10001
+        # 3. Force Init Container to match (Fixes Git error)
+        initContainers:
+        - name: project-clone
+          securityContext:
+            runAsUser: 10001
+            runAsGroup: 0
 components:
   - name: tools
     container:
-      # SWITCHED TO UNIVERSAL IMAGE (Works with random UIDs)
+      # Universal Image (Contains user 10001)
       image: quay.io/devfile/universal-developer-image:ubi8-latest
       memoryLimit: 2Gi
       mountSources: true
@@ -26,21 +34,10 @@ components:
         - name: https-python
           targetPort: 8080
           protocol: https
-        - exposure: none
-          name: debug
-          targetPort: 5858
       env:
-        - name: DEBUG_PORT
-          value: '5858'
+        - name: HOME
+          value: /projects
 commands:
-  - id: pip-install-requirements
-    exec:
-      commandLine: pip install -r requirements.txt
-      workingDir: ${PROJECT_SOURCE}
-      group:
-        kind: build
-        isDefault: true
-      component: tools
   - id: run-app
     exec:
       commandLine: python app.py
@@ -51,7 +48,6 @@ commands:
         isDefault: true
 starterProjects:
   - name: flask-example
-    description: 'Flask web framework example'
     git:
       remotes:
         origin: https://github.com/devfile-samples/python-ex
