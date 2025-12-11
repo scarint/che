@@ -1,38 +1,42 @@
 schemaVersion: 2.2.2
 metadata:
-  name: python-configmap-override
-  displayName: Python (ConfigMap Override)
+  name: python-configmap-final
+  displayName: Python (ConfigMap Final)
   attributes:
     app.che.eclipse.org/editor: che-incubator/che-code/latest
-    # --- THE HACK SECTION ---
+    # --- PURE KUBERNETES OVERRIDES ---
+    # We define the Volume AND the Mount here to bypass Devfile validation
     controller.devfile.io/pod-overrides:
       spec:
-        # 1. Define the Volume (pointing to your ConfigMap)
         volumes:
         - name: identity-hack
           configMap:
             name: fake-passwd
-        # 2. Inject configuration into the 'tools' container
         containers:
         - name: tools
-          # Mount the fake passwd file
           volumeMounts:
           - name: identity-hack
             mountPath: /etc/config
-          # Set the environment variables to use it
           env:
+          # 1. Force Identity Spoofing (Fixes ENOENT)
           - name: LD_PRELOAD
             value: "/usr/lib64/libnss_wrapper.so"
           - name: NSS_WRAPPER_PASSWD
             value: "/etc/config/passwd"
           - name: NSS_WRAPPER_GROUP
             value: "/etc/config/group"
+          # 2. Force Git to ignore ownership (Fixes Git error)
           - name: HOME
             value: /projects
+          - name: GIT_CONFIG_COUNT
+            value: "1"
+          - name: GIT_CONFIG_KEY_0
+            value: "safe.directory"
+          - name: GIT_CONFIG_VALUE_0
+            value: "*"
 components:
   - name: tools
     container:
-      # Universal Image
       image: quay.io/devfile/universal-developer-image:ubi8-latest
       memoryLimit: 2Gi
       mountSources: true
@@ -43,16 +47,20 @@ components:
           targetPort: 8080
           protocol: https
 commands:
+  # Manual Init command to run ONCE after workspace starts
+  - id: init-project
+    exec:
+      component: tools
+      workingDir: /projects
+      commandLine: |
+        git clone https://github.com/devfile-samples/python-ex
+        cd python-ex
+        pip install -r requirements.txt
   - id: run-app
     exec:
       commandLine: python app.py
-      workingDir: ${PROJECT_SOURCE}
+      workingDir: /projects/python-ex
       component: tools
       group:
         kind: run
         isDefault: true
-starterProjects:
-  - name: flask-example
-    git:
-      remotes:
-        origin: https://github.com/devfile-samples/python-ex
