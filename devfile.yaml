@@ -1,12 +1,11 @@
 schemaVersion: 2.2.2
 metadata:
-  name: python-native-fix
-  displayName: Python (Native Entrypoint)
+  name: python-native-clean
+  displayName: Python (Native Clean)
   attributes:
+    # Explicitly set the Editor to VS Code
     app.che.eclipse.org/editor: che-incubator/che-code/latest
-    controller.devfile.io/devworkspace-config:
-      workspace:
-        progressTimeout: "15m"
+    # REMOVED the broken timeout config to pass validation
 components:
   - name: tools
     container:
@@ -14,9 +13,9 @@ components:
       memoryLimit: 2Gi
       mountSources: true
       # --- THE FIX ---
-      # Run the built-in script that fixes the UID 1234 issue
+      # 1. Run the image's built-in script (fixes UID 1234)
       command: ["/entrypoint.sh"]
-      # Then pass the keep-alive command as an argument to that script
+      # 2. Tell it to keep the container running
       args: ["tail", "-f", "/dev/null"]
       # ---------------
       endpoints:
