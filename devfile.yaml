@@ -1,30 +1,42 @@
 schemaVersion: 2.2.2
 metadata:
-  name: python-native-clean
-  displayName: Python (Native Clean)
+  name: python-configmap-fix
+  displayName: Python (ConfigMap Fix)
   attributes:
-    # Explicitly set the Editor to VS Code
     app.che.eclipse.org/editor: che-incubator/che-code/latest
-    # REMOVED the broken timeout config to pass validation
+    # Bypass the broken timeout config
 components:
   - name: tools
     container:
       image: quay.io/devfile/universal-developer-image:ubi8-latest
       memoryLimit: 2Gi
       mountSources: true
-      # --- THE FIX ---
-      # 1. Run the image's built-in script (fixes UID 1234)
-      command: ["/entrypoint.sh"]
-      # 2. Tell it to keep the container running
-      args: ["tail", "-f", "/dev/null"]
-      # ---------------
+      args: ['tail', '-f', '/dev/null']
       endpoints:
         - name: https-python
           targetPort: 8080
           protocol: https
       env:
+        # 1. Force the container to use our fake identity files
+        - name: LD_PRELOAD
+          value: "/usr/lib64/libnss_wrapper.so"
+        - name: NSS_WRAPPER_PASSWD
+          value: "/etc/config/passwd"
+        - name: NSS_WRAPPER_GROUP
+          value: "/etc/config/group"
         - name: HOME
           value: /projects
+      volumeMounts:
+        # 2. Mount the ConfigMap we created in Step 1
+        - name: identity-volume
+          path: /etc/config
+  - name: identity-volume
+    kubernetes:
+      inlined:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: fake-passwd
 commands:
   - id: run-app
     exec:
