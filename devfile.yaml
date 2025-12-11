@@ -1,34 +1,15 @@
 schemaVersion: 2.2.2
 metadata:
-  name: python-universal-10001
-  displayName: Python (Universal 10001)
-  language: Python
+  name: python-force-wrapper
+  displayName: Python (Identity Fix)
   attributes:
-    # 1. Explicitly tell Che to use VS Code (fixes "plugin not found")
     app.che.eclipse.org/editor: che-incubator/che-code/latest
-    
-    # 2. Force 15m Timeout
     controller.devfile.io/devworkspace-config:
       workspace:
         progressTimeout: "15m"
-        
-    # 3. Force Identity to 10001 (Matches the 'user' in the image)
-    controller.devfile.io/pod-overrides:
-      spec:
-        securityContext:
-          runAsUser: 10001
-          runAsGroup: 0
-          fsGroup: 10001
-        # Also force the Init Container to match (Fixes Git error)
-        initContainers:
-        - name: project-clone
-          securityContext:
-            runAsUser: 10001
-            runAsGroup: 0
 components:
   - name: tools
     container:
-      # Universal Image (Contains user 10001)
       image: quay.io/devfile/universal-developer-image:ubi8-latest
       memoryLimit: 2Gi
       mountSources: true
@@ -38,9 +19,31 @@ components:
           targetPort: 8080
           protocol: https
       env:
+        # --- THE FIX: Manually Activate Identity Spoofing ---
+        - name: USER_NAME
+          value: "user"
+        - name: USER_UID
+          value: "1234"  # Match the UID Che is forcing
         - name: HOME
-          value: /projects
+          value: "/projects"
+        # Force the NSS Wrapper to load
+        - name: LD_PRELOAD
+          value: "/usr/lib64/libnss_wrapper.so"
+        - name: NSS_WRAPPER_PASSWD
+          value: "/tmp/passwd"
+        - name: NSS_WRAPPER_GROUP
+          value: "/tmp/group"
 commands:
+  - id: init-nss
+    exec:
+      component: tools
+      commandLine: |
+        # Generate a fake passwd file on the fly
+        echo "user:x:1234:0:User:${HOME}:/bin/bash" > /tmp/passwd
+        echo "root:x:0:0:root:/root:/bin/bash" >> /tmp/passwd
+        echo "root:x:0:" > /tmp/group
+        echo "user:x:1234:" >> /tmp/group
+      workingDir: /projects
   - id: run-app
     exec:
       commandLine: python app.py
