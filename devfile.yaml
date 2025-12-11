@@ -9,6 +9,11 @@ metadata:
     - Universal
   projectType: Python
   language: Python
+  attributes:
+    controller.devfile.io/scc-user-id: "1234"
+    controller.devfile.io/devworkspace-config:
+      workspace:
+        progressTimeout: "15m"
 components:
   - name: tools
     container:
