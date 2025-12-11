@@ -1,29 +1,33 @@
 schemaVersion: 2.2.2
 metadata:
-  name: python-debug-stable
-  displayName: Python (Debug Mode)
+  name: python-direct-write
+  displayName: Python (Direct Write)
   attributes:
-    # Disable the auto-editor injection so we have full control
-    controller.devfile.io/devworkspace-config:
-      workspace:
-        progressTimeout: "15m"
+    app.che.eclipse.org/editor: che-incubator/che-code/latest
 components:
   - name: tools
     container:
       image: quay.io/devfile/universal-developer-image:ubi8-latest
       memoryLimit: 2Gi
       mountSources: true
-      # 1. Start a simple Python server to trick the Health Check
+      # --- THE FIX: Direct /etc/passwd Patch ---
       command: ["/bin/sh", "-c"]
-      args: ["echo 'Starting Fake Editor...'; python3 -m http.server 3100 & tail -f /dev/null"]
+      args:
+        - |
+          # 1. Check if we need to fix the user
+          if ! grep -q "1234" /etc/passwd; then
+            echo "Fixing Identity for UID 1234..."
+            # We explicitly verified this file is writable!
+            echo "user:x:1234:0:User:${HOME}:/bin/bash" >> /etc/passwd
+          fi
+          
+          # 2. Keep the container alive so Che can launch the editor
+          tail -f /dev/null
+      # -----------------------------------------
       endpoints:
-        - name: fake-editor
-          targetPort: 3100
-          attributes:
-            type: main
-            path: /
-            discoverable: true
-            public: true
+        - name: https-python
+          targetPort: 8080
+          protocol: https
       env:
         - name: HOME
           value: /projects
@@ -36,3 +40,8 @@ commands:
       group:
         kind: run
         isDefault: true
+starterProjects:
+  - name: flask-example
+    git:
+      remotes:
+        origin: https://github.com/devfile-samples/python-ex
