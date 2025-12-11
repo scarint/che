@@ -1,56 +1,29 @@
 schemaVersion: 2.2.2
 metadata:
-  name: python-identity-fixed
-  displayName: Python (Identity Fixed)
+  name: python-native-fix
+  displayName: Python (Native Entrypoint)
   attributes:
     app.che.eclipse.org/editor: che-incubator/che-code/latest
     controller.devfile.io/devworkspace-config:
       workspace:
         progressTimeout: "15m"
-    # OVERRIDE: Inject the Identity Fix safely
-    controller.devfile.io/pod-overrides:
-      spec:
-        # 1. Define an Init Container to create the User Database
-        initContainers:
-        - name: fix-identity
-          image: quay.io/devfile/universal-developer-image:ubi8-latest
-          command: ["/bin/sh", "-c"]
-          args:
-            - |
-              # Create a fake user entry for UID 1234
-              echo "Creating identity for UID 1234..."
-              echo "user:x:1234:0:User:/projects:/bin/bash" > /projects/passwd
-              echo "root:x:0:0:root:/root:/bin/bash" >> /projects/passwd
-              echo "root:x:0:" > /projects/group
-              echo "user:x:1234:" >> /projects/group
-              chmod 644 /projects/passwd /projects/group
-          volumeMounts:
-          - name: projects
-            mountPath: /projects
-        # 2. Inject the spoofing library ONLY into the Main Container
-        containers:
-        - name: tools
-          env:
-          - name: LD_PRELOAD
-            value: "/usr/lib64/libnss_wrapper.so"
-          - name: NSS_WRAPPER_PASSWD
-            value: "/projects/passwd"
-          - name: NSS_WRAPPER_GROUP
-            value: "/projects/group"
 components:
   - name: tools
     container:
       image: quay.io/devfile/universal-developer-image:ubi8-latest
       memoryLimit: 2Gi
       mountSources: true
-      # Keep container alive
-      args: ['tail', '-f', '/dev/null']
+      # --- THE FIX ---
+      # Run the built-in script that fixes the UID 1234 issue
+      command: ["/entrypoint.sh"]
+      # Then pass the keep-alive command as an argument to that script
+      args: ["tail", "-f", "/dev/null"]
+      # ---------------
       endpoints:
         - name: https-python
           targetPort: 8080
           protocol: https
       env:
-        # Standard Setup
         - name: HOME
           value: /projects
 commands:
