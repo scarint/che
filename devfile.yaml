@@ -1,7 +1,7 @@
 schemaVersion: 2.2.2
 metadata:
-  name: python-victory-public
-  displayName: Python (Victory Public)
+  name: python-public-access
+  displayName: Python (Public Access)
   attributes:
     app.che.eclipse.org/editor: che-incubator/che-code/latest
 components:
@@ -10,32 +10,36 @@ components:
       image: quay.io/devfile/universal-developer-image:ubi8-latest
       memoryLimit: 2Gi
       mountSources: true
-      # --- 1. THE STARTUP FIX (Identity + Port) ---
+      # --- THE COMPLETE FIX (Identity + Network + Public Access) ---
       command: ["/bin/sh", "-c"]
       args:
         - |
-          # Patch User 1234 into /etc/passwd
+          # 1. Fix Identity (Write to /etc/passwd)
           if ! grep -q "1234" /etc/passwd; then
             echo "Fixing Identity for UID 1234..."
             echo "user:x:1234:0:User:${HOME}:/bin/bash" >> /etc/passwd
           fi
           
-          # Kill zombie processes
+          # 2. Fix Port (Kill zombies)
           fuser -k 3100/tcp || true
           
-          # Launch Editor
+          # 3. FIX PUBLIC ACCESS (The new part)
+          # Patch the script to bind to 0.0.0.0 instead of 127.0.0.1
+          echo "Patching VS Code to listen on all interfaces..."
+          sed -i 's/127.0.0.1/0.0.0.0/g' /checode/entrypoint-volume.sh
+          
+          # 4. Launch Editor
           echo "Starting VS Code..."
           exec /checode/entrypoint-volume.sh
-      # --------------------------------------------
+      # -------------------------------------------------------------
       endpoints:
         - name: https-python
           targetPort: 8080
           protocol: https
-        # --- 2. THE NETWORK FIX (Backdoor Route) ---
+        # The Backdoor Route
         - name: vscode-direct
           targetPort: 3100
           attributes:
-            # Create a public URL that bypasses Che Auth
             public: "true"
             protocol: http
             secure: "false"
