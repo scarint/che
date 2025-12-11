@@ -1,15 +1,36 @@
 schemaVersion: 2.2.2
 metadata:
-  name: python-force-wrapper
-  displayName: Python (Identity Fix)
+  name: python-root-bypass
+  displayName: Python (Root Bypass)
   attributes:
+    # Explicitly set the Editor to VS Code
     app.che.eclipse.org/editor: che-incubator/che-code/latest
-    controller.devfile.io/devworkspace-config:
-      workspace:
-        progressTimeout: "15m"
+    
+    # THE FIX: Force the Pod to run as Root (User 0)
+    # This bypasses the 'ENOENT' crash because Root always exists.
+    controller.devfile.io/pod-overrides:
+      spec:
+        securityContext:
+          runAsUser: 0
+          runAsGroup: 0
+          fsGroup: 0
+        # Fix the Init Container (Cloner)
+        initContainers:
+        - name: project-clone
+          securityContext:
+            runAsUser: 0
+          env:
+          # Force Git to ignore "Dubious Ownership"
+          - name: GIT_CONFIG_COUNT
+            value: "1"
+          - name: GIT_CONFIG_KEY_0
+            value: "safe.directory"
+          - name: GIT_CONFIG_VALUE_0
+            value: "*"
 components:
   - name: tools
     container:
+      # Universal Image
       image: quay.io/devfile/universal-developer-image:ubi8-latest
       memoryLimit: 2Gi
       mountSources: true
@@ -19,31 +40,10 @@ components:
           targetPort: 8080
           protocol: https
       env:
-        # --- THE FIX: Manually Activate Identity Spoofing ---
-        - name: USER_NAME
-          value: "user"
-        - name: USER_UID
-          value: "1234"  # Match the UID Che is forcing
+        # Set HOME to /projects so configs stick
         - name: HOME
-          value: "/projects"
-        # Force the NSS Wrapper to load
-        - name: LD_PRELOAD
-          value: "/usr/lib64/libnss_wrapper.so"
-        - name: NSS_WRAPPER_PASSWD
-          value: "/tmp/passwd"
-        - name: NSS_WRAPPER_GROUP
-          value: "/tmp/group"
+          value: /projects
 commands:
-  - id: init-nss
-    exec:
-      component: tools
-      commandLine: |
-        # Generate a fake passwd file on the fly
-        echo "user:x:1234:0:User:${HOME}:/bin/bash" > /tmp/passwd
-        echo "root:x:0:0:root:/root:/bin/bash" >> /tmp/passwd
-        echo "root:x:0:" > /tmp/group
-        echo "user:x:1234:" >> /tmp/group
-      workingDir: /projects
   - id: run-app
     exec:
       commandLine: python app.py
