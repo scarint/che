@@ -1,66 +1,53 @@
 schemaVersion: 2.2.2
 metadata:
-  name: python-configmap-final
-  displayName: Python (ConfigMap Final)
+  name: python-manual-start
+  displayName: Python (Manual Start)
   attributes:
+    # Explicitly set the Editor to VS Code
     app.che.eclipse.org/editor: che-incubator/che-code/latest
-    # --- PURE KUBERNETES OVERRIDES ---
-    # We define the Volume AND the Mount here to bypass Devfile validation
-    controller.devfile.io/pod-overrides:
-      spec:
-        volumes:
-        - name: identity-hack
-          configMap:
-            name: fake-passwd
-        containers:
-        - name: tools
-          volumeMounts:
-          - name: identity-hack
-            mountPath: /etc/config
-          env:
-          # 1. Force Identity Spoofing (Fixes ENOENT)
-          - name: LD_PRELOAD
-            value: "/usr/lib64/libnss_wrapper.so"
-          - name: NSS_WRAPPER_PASSWD
-            value: "/etc/config/passwd"
-          - name: NSS_WRAPPER_GROUP
-            value: "/etc/config/group"
-          # 2. Force Git to ignore ownership (Fixes Git error)
-          - name: HOME
-            value: /projects
-          - name: GIT_CONFIG_COUNT
-            value: "1"
-          - name: GIT_CONFIG_KEY_0
-            value: "safe.directory"
-          - name: GIT_CONFIG_VALUE_0
-            value: "*"
 components:
   - name: tools
     container:
       image: quay.io/devfile/universal-developer-image:ubi8-latest
       memoryLimit: 2Gi
       mountSources: true
-      # Standard Keep-Alive
-      args: ['tail', '-f', '/dev/null']
+      # Just run a shell. Do NOT run entrypoint.sh or anything complex.
+      command: ["/bin/sh"]
+      args: ["-c", "tail -f /dev/null"]
       endpoints:
         - name: https-python
           targetPort: 8080
           protocol: https
+      env:
+        - name: HOME
+          value: /projects
 commands:
-  # Manual Init command to run ONCE after workspace starts
-  - id: init-project
+  # The Magic Script
+  - id: start-editor
     exec:
       component: tools
       workingDir: /projects
       commandLine: |
-        git clone https://github.com/devfile-samples/python-ex
+        # 1. Create the fake identity for UID 1234
+        echo "Fixing identity..."
+        echo "root:x:0:0:root:/root:/bin/bash" > /tmp/passwd
+        echo "user:x:1234:0:User:/projects:/bin/bash" >> /tmp/passwd
+        echo "root:x:0:" > /tmp/group
+        echo "user:x:1234:" >> /tmp/group
+        
+        # 2. Set the environment
+        export NSS_WRAPPER_PASSWD=/tmp/passwd
+        export NSS_WRAPPER_GROUP=/tmp/group
+        export LD_PRELOAD=/usr/lib64/libnss_wrapper.so
+        
+        # 3. Clone the repo (ignoring permissions)
+        git config --global --add safe.directory "*"
+        if [ ! -d "python-ex" ]; then
+            git clone https://github.com/devfile-samples/python-ex
+        fi
+        
+        # 4. Start the Application
         cd python-ex
         pip install -r requirements.txt
-  - id: run-app
-    exec:
-      commandLine: python app.py
-      workingDir: /projects/python-ex
-      component: tools
-      group:
-        kind: run
-        isDefault: true
+        echo "Starting App..."
+        python app.py
