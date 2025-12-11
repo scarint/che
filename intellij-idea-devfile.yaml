@@ -1,0 +1,75 @@
+schemaVersion: 2.2.2
+metadata:
+  name: intellij-projector-fix
+  displayName: IntelliJ IDEA (Projector Fix)
+  attributes:
+    # We do NOT define an editor here. We are installing it manually.
+    controller.devfile.io/devworkspace-config:
+      workspace:
+        progressTimeout: "15m"
+components:
+  - name: tools
+    container:
+      image: quay.io/devfile/universal-developer-image:ubi8-latest
+      memoryLimit: 3Gi
+      mountSources: true
+      # --- THE STARTUP SCRIPT ---
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          # 1. FIX IDENTITY (The "Golden" Patch)
+          if ! grep -q "1234" /etc/passwd; then
+            echo "Fixing Identity for UID 1234..."
+            echo "user:x:1234:0:User:${HOME}:/bin/bash" >> /etc/passwd
+          fi
+          
+          # 2. CLEAR PORT 8887 (Kill Zombies)
+          fuser -k 8887/tcp || true
+          
+          # 3. INSTALL DEPENDENCIES (Required for Java GUI)
+          # We need to be root to install rpms, or use sudo if available.
+          # UDI usually allows sudo for the default user.
+          echo "Installing GUI libraries..."
+          sudo dnf install -y libXext libXrender libXtst libXi freetype
+          
+          # 4. INSTALL PROJECTOR (The Web Renderer)
+          if ! command -v projector &> /dev/null; then
+             echo "Installing JetBrains Projector..."
+             pip3 install projector-installer --user
+             export PATH=$PATH:$HOME/.local/bin
+          fi
+          export PATH=$PATH:$HOME/.local/bin
+          
+          # 5. INSTALL INTELLIJ (If not present)
+          # We create a config named 'IntelliJ' automatically
+          if ! projector config show IntelliJ &> /dev/null; then
+             echo "Downloading IntelliJ IDEA Community..."
+             # Auto-accept license, use port 8887
+             projector install --name IntelliJ --ide IDEA_COMMUNITY --port 8887 --accept-license --hostname 0.0.0.0
+          fi
+          
+          # 6. RUN IT
+          echo "Starting IntelliJ Projector on 0.0.0.0:8887..."
+          projector run IntelliJ
+      # --------------------------
+      endpoints:
+        # The Backdoor Route (Port 8887)
+        - name: intellij-direct
+          targetPort: 8887
+          attributes:
+            public: "true"
+            protocol: http
+            secure: "false"
+            discoverable: "true"
+      env:
+        - name: HOME
+          value: /projects
+commands:
+  - id: run-app
+    exec:
+      commandLine: python app.py
+      workingDir: ${PROJECT_SOURCE}
+      component: tools
+      group:
+        kind: run
+        isDefault: true
