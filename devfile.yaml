@@ -1,53 +1,38 @@
 schemaVersion: 2.2.2
 metadata:
-  name: python-manual-start
-  displayName: Python (Manual Start)
+  name: python-debug-stable
+  displayName: Python (Debug Mode)
   attributes:
-    # Explicitly set the Editor to VS Code
-    app.che.eclipse.org/editor: che-incubator/che-code/latest
+    # Disable the auto-editor injection so we have full control
+    controller.devfile.io/devworkspace-config:
+      workspace:
+        progressTimeout: "15m"
 components:
   - name: tools
     container:
       image: quay.io/devfile/universal-developer-image:ubi8-latest
       memoryLimit: 2Gi
       mountSources: true
-      # Just run a shell. Do NOT run entrypoint.sh or anything complex.
-      command: ["/bin/sh"]
-      args: ["-c", "tail -f /dev/null"]
+      # 1. Start a simple Python server to trick the Health Check
+      command: ["/bin/sh", "-c"]
+      args: ["echo 'Starting Fake Editor...'; python3 -m http.server 3100 & tail -f /dev/null"]
       endpoints:
-        - name: https-python
-          targetPort: 8080
-          protocol: https
+        - name: fake-editor
+          targetPort: 3100
+          attributes:
+            type: main
+            path: /
+            discoverable: true
+            public: true
       env:
         - name: HOME
           value: /projects
 commands:
-  # The Magic Script
-  - id: start-editor
+  - id: run-app
     exec:
+      commandLine: python app.py
+      workingDir: ${PROJECT_SOURCE}
       component: tools
-      workingDir: /projects
-      commandLine: |
-        # 1. Create the fake identity for UID 1234
-        echo "Fixing identity..."
-        echo "root:x:0:0:root:/root:/bin/bash" > /tmp/passwd
-        echo "user:x:1234:0:User:/projects:/bin/bash" >> /tmp/passwd
-        echo "root:x:0:" > /tmp/group
-        echo "user:x:1234:" >> /tmp/group
-        
-        # 2. Set the environment
-        export NSS_WRAPPER_PASSWD=/tmp/passwd
-        export NSS_WRAPPER_GROUP=/tmp/group
-        export LD_PRELOAD=/usr/lib64/libnss_wrapper.so
-        
-        # 3. Clone the repo (ignoring permissions)
-        git config --global --add safe.directory "*"
-        if [ ! -d "python-ex" ]; then
-            git clone https://github.com/devfile-samples/python-ex
-        fi
-        
-        # 4. Start the Application
-        cd python-ex
-        pip install -r requirements.txt
-        echo "Starting App..."
-        python app.py
+      group:
+        kind: run
+        isDefault: true
