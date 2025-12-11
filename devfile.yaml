@@ -1,7 +1,7 @@
 schemaVersion: 2.2.2
 metadata:
-  name: python-direct-write
-  displayName: Python (Direct Write)
+  name: python-victory
+  displayName: Python (Victory)
   attributes:
     app.che.eclipse.org/editor: che-incubator/che-code/latest
 components:
@@ -10,20 +10,24 @@ components:
       image: quay.io/devfile/universal-developer-image:ubi8-latest
       memoryLimit: 2Gi
       mountSources: true
-      # --- THE FIX: Direct /etc/passwd Patch ---
+      # --- THE COMPLETE FIX ---
       command: ["/bin/sh", "-c"]
       args:
         - |
-          # 1. Check if we need to fix the user
+          # 1. Fix the Identity (Write to /etc/passwd if missing)
           if ! grep -q "1234" /etc/passwd; then
             echo "Fixing Identity for UID 1234..."
-            # We explicitly verified this file is writable!
             echo "user:x:1234:0:User:${HOME}:/bin/bash" >> /etc/passwd
           fi
           
-          # 2. Keep the container alive so Che can launch the editor
-          tail -f /dev/null
-      # -----------------------------------------
+          # 2. Nuclear Option: Kill anything holding port 3100 (Fixes EADDRINUSE)
+          # We use || true so the script doesn't exit if nothing is found
+          fuser -k 3100/tcp || true
+          
+          # 3. Start the Editor explicitly
+          echo "Starting VS Code..."
+          exec /checode/entrypoint-volume.sh
+      # ------------------------
       endpoints:
         - name: https-python
           targetPort: 8080
