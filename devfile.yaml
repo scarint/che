@@ -1,31 +1,39 @@
 schemaVersion: 2.2.2
 metadata:
-  name: python-final-10001
-  displayName: Python (Alignment 10001)
+  name: python-universal-10001
+  displayName: Python (Universal 10001)
   projectType: Python
   language: Python
   attributes:
-    # 1. Force Timeout to 15m (Safety net)
+    # 1. Force 15m Timeout
     controller.devfile.io/devworkspace-config:
       workspace:
         progressTimeout: "15m"
-    # 2. Force Identity to 10001 (Matches the 'user' in the image)
+    # 2. Force Identity to 10001 (Matching your NAS)
     controller.devfile.io/pod-overrides:
       spec:
         securityContext:
           runAsUser: 10001
           runAsGroup: 0
           fsGroup: 10001
-        # 3. Force Init Container to match (Fixes Git error)
         initContainers:
         - name: project-clone
           securityContext:
             runAsUser: 10001
             runAsGroup: 0
 components:
+  # --- THE MISSING PIECE: Explicitly Define VS Code ---
+  - name: che-code
+    plugin:
+      id: che-incubator/che-code/latest
+    env:
+      # Optional: Auto-install Python extension
+      - name: VSCODE_EXTENSIONS
+        value: "ms-python.python"
+        
+  # --- The Main Container ---
   - name: tools
     container:
-      # Universal Image (Contains user 10001)
       image: quay.io/devfile/universal-developer-image:ubi8-latest
       memoryLimit: 2Gi
       mountSources: true
