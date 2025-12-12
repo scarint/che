@@ -32,6 +32,7 @@ components:
           if ! command -v python3.9 &> /dev/null; then
              echo "Installing Python 3.9 for Projector compatibility..."
              sudo dnf install -y python39 libXext libXrender libXtst libXi freetype python3-pip
+             which pip3
           fi
           
           # 4. INSTALL PROJECTOR (Using Python 3.9)
