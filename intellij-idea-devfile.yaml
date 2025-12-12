@@ -39,7 +39,7 @@ components:
           if ! command -v projector &> /dev/null; then
              echo "Installing JetBrains Projector..."
              # Use pip3.9 specifically
-             pip3.9 install projector-installer --user
+             pip3 install projector-installer --user
           fi
           
           # 5. INSTALL INTELLIJ
