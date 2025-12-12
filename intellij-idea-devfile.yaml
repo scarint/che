@@ -1,7 +1,7 @@
 schemaVersion: 2.2.2
 metadata:
-  name: intellij-interactive
-  displayName: IntelliJ (Interactive Bypass)
+  name: intellij-sniper
+  displayName: IntelliJ (Sniper Install)
   attributes:
     controller.devfile.io/devworkspace-config:
       workspace:
@@ -23,7 +23,7 @@ components:
             echo "user:x:1234:0:User:${HOME}:/bin/bash" >> /etc/passwd
           fi
           
-          # 2. CLEAR PORT 8887
+          # 2. CLEAR PORT
           fuser -k 8887/tcp || true
           
           # 3. INSTALL PROJECTOR
@@ -33,37 +33,40 @@ components:
              pip3 install projector-installer --user
           fi
           
-          # 4. PATCH PYTHON CRASH
+          # 4. PATCH PYTHON
           SITE_PACKAGES=$HOME/.local/lib/python3.11/site-packages
           TARGET_FILE="$SITE_PACKAGES/projector_installer/products.py"
           if [ -f "$TARGET_FILE" ]; then
-             echo "Applying Patch..."
              if ! grep -q "from dataclasses import dataclass, field" "$TARGET_FILE"; then
+                echo "Applying Python 3.11 Patch..."
                 sed -i 's/from dataclasses import dataclass.*/from dataclasses import dataclass, field/' "$TARGET_FILE"
+                sed -i 's/ver: LooseVersion = .*/ver: LooseVersion = field(default_factory=lambda: LooseVersion("0.0.0"))/' "$TARGET_FILE"
              fi
-             sed -i 's/ver: LooseVersion = .*/ver: LooseVersion = field(default_factory=lambda: LooseVersion("0.0.0"))/' "$TARGET_FILE"
           fi
           
-          # 5. INSTALL INTELLIJ (The Fix)
+          # 5. INSTALL INTELLIJ (The Sniper Shot)
           if ! projector config show &> /dev/null; then
-             echo "Downloading IntelliJ IDEA Community..."
-             # Send '1' (Select version) then 'y' (Accept license)
-             # We use printf to send exactly these two inputs
-             printf "1\ny\n" | projector install IDEA_COMMUNITY
+             echo "Navigating Installer Menu..."
+             # INPUTS:
+             # 1. y (License)
+             # 2. y (Tested versions only)
+             # 3. 5 (Select #5 - usually the latest version in the list)
+             printf "y\ny\n5\n" | projector install IDEA_COMMUNITY
           fi
           
-          # 6. FIND CONFIG NAME
-          # We need to know what the installer named it (e.g. "IntelliJ_IDEA_Community_Edition_2023...")
+          # 6. RUN IT
+          # Find the config name we just created
           CONFIG_NAME=$(projector config show | grep "Config name:" | awk '{print $3}' | head -n 1)
           
           if [ -z "$CONFIG_NAME" ]; then
-             echo "Error: Could not find installed config!"
-             exit 1
+             echo "WARNING: Could not determine config name. Guessing default..."
+             CONFIG_NAME="IntelliJ_IDEA_Community_Edition_2021.3"
+             # If the name is wrong, list configs to debug logs
+             projector config show || true
           fi
           
-          # 7. RUN IT
           echo "Launching config: $CONFIG_NAME"
-          # Force host/port to ensure external access
+          # Bind 0.0.0.0 for Ingress access
           projector run "$CONFIG_NAME" --port 8887 --host 0.0.0.0
       endpoints:
         - name: intellij-direct
