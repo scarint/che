@@ -1,7 +1,7 @@
 schemaVersion: 2.2.2
 metadata:
-  name: intellij-sniper
-  displayName: IntelliJ (Sniper Install)
+  name: intellij-precision
+  displayName: IntelliJ (Precision Run)
   attributes:
     controller.devfile.io/devworkspace-config:
       workspace:
@@ -44,29 +44,30 @@ components:
              fi
           fi
           
-          # 5. INSTALL INTELLIJ (The Sniper Shot)
+          # 5. INSTALL INTELLIJ
           if ! projector config show &> /dev/null; then
              echo "Navigating Installer Menu..."
-             # INPUTS:
-             # 1. y (License)
-             # 2. y (Tested versions only)
-             # 3. 5 (Select #5 - usually the latest version in the list)
+             # 1. Yes (License), 2. Yes (Tested), 3. Select 5 (Latest)
              printf "y\ny\n5\n" | projector install IDEA_COMMUNITY
           fi
           
-          # 6. RUN IT
-          # Find the config name we just created
-          CONFIG_NAME=$(projector config show | grep "Config name:" | awk '{print $3}' | head -n 1)
+          # 6. RUN IT (The Fix)
+          echo "Detecting Configuration..."
+          # GREP FIX: Look for "Configuration name" instead of "Config name"
+          CONFIG_NAME=$(projector config show | grep "Configuration name:" | awk '{print $3}' | head -n 1)
           
+          # Fallback check
           if [ -z "$CONFIG_NAME" ]; then
-             echo "WARNING: Could not determine config name. Guessing default..."
-             CONFIG_NAME="IntelliJ_IDEA_Community_Edition_2021.3"
-             # If the name is wrong, list configs to debug logs
-             projector config show || true
+             echo "WARNING: Parsing failed. Checking strictly for 'IntelliJ'..."
+             if projector config show | grep -q "IntelliJ"; then
+                CONFIG_NAME="IntelliJ"
+             else
+                echo "CRITICAL ERROR: No configuration found. Exiting."
+                exit 1
+             fi
           fi
           
           echo "Launching config: $CONFIG_NAME"
-          # Bind 0.0.0.0 for Ingress access
           projector run "$CONFIG_NAME" --port 8887 --host 0.0.0.0
       endpoints:
         - name: intellij-direct
