@@ -32,7 +32,7 @@ components:
           if ! command -v python3.9 &> /dev/null; then
              echo "Installing Python 3.9 for Projector compatibility..."
              sudo dnf install -y python39 libXext libXrender libXtst libXi freetype python3-pip
-             which pip3
+             which pip3.9
           fi
           
           # 4. INSTALL PROJECTOR (Using Python 3.9)
@@ -40,7 +40,7 @@ components:
           if ! command -v projector &> /dev/null; then
              echo "Installing JetBrains Projector..."
              # Use pip3.9 specifically
-             pip3 install projector-installer --user
+             pip3.9 install projector-installer --user
           fi
           
           # 5. INSTALL INTELLIJ
