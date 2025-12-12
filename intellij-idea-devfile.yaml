@@ -1,16 +1,13 @@
 schemaVersion: 2.2.2
 metadata:
-  name: intellij-python39-fix
-  displayName: IntelliJ (Python 3.9 Fix)
+  name: intellij-patch-fix
+  displayName: IntelliJ (Python Patch)
   attributes:
-    # Disable auto-editor to prevent crashes
-    controller.devfile.io/devworkspace-config:
-      workspace:
-        progressTimeout: "15m"
+    app.che.eclipse.org/editor: che-incubator/che-code/latest
 components:
   - name: tools
     container:
-      # Use the "Victory" Image (UDI)
+      # Use the stable UDI image
       image: quay.io/devfile/universal-developer-image:ubi8-latest
       memoryLimit: 4Gi
       mountSources: true
@@ -18,7 +15,7 @@ components:
       command: ["/bin/sh", "-c"]
       args:
         - |
-          # 1. FIX IDENTITY (The "Golden" Patch)
+          # 1. FIX IDENTITY (The "Victory" Patch)
           if ! grep -q "1234" /etc/passwd; then
             echo "Fixing Identity for UID 1234..."
             echo "user:x:1234:0:User:${HOME}:/bin/bash" >> /etc/passwd
@@ -27,26 +24,32 @@ components:
           # 2. CLEAR PORT 8887
           fuser -k 8887/tcp || true
           
-          # 3. INSTALL COMPATIBLE PYTHON (3.9)
-          # Projector crashes on Python 3.11, so we install 3.9 side-by-side
-          if ! command -v python3.9 &> /dev/null; then
-             echo "Installing Python 3.9 for Projector compatibility..."
-             sudo dnf install -y python39 libXext libXrender libXtst libXi freetype python3-pip
-             which pip3.9
-          fi
-          
-          # 4. INSTALL PROJECTOR (Using Python 3.9)
+          # 3. INSTALL PROJECTOR (User Mode)
           export PATH=$PATH:$HOME/.local/bin
           if ! command -v projector &> /dev/null; then
              echo "Installing JetBrains Projector..."
-             # Use pip3.9 specifically
-             pip3.9 install projector-installer --user
+             pip3 install projector-installer --user
           fi
+          
+          # 4. --- THE MAGIC PATCH ---
+          # Fix the Python 3.11 compatibility error in products.py
+          SITE_PACKAGES=$HOME/.local/lib/python3.11/site-packages
+          TARGET_FILE="$SITE_PACKAGES/projector_installer/products.py"
+          
+          if [ -f "$TARGET_FILE" ]; then
+             echo "Patching Projector source code at $TARGET_FILE..."
+             # Step A: Add 'field' to the imports
+             sed -i 's/from dataclasses import dataclass/from dataclasses import dataclass, field/' "$TARGET_FILE"
+             # Step B: Replace the broken mutable default with a default_factory
+             sed -i 's/ver: LooseVersion = LooseVersion("0.0.0")/ver: LooseVersion = field(default_factory=lambda: LooseVersion("0.0.0"))/' "$TARGET_FILE"
+          else
+             echo "WARNING: Could not find products.py to patch!"
+          fi
+          # ---------------------------
           
           # 5. INSTALL INTELLIJ
           if ! projector config show IntelliJ &> /dev/null; then
              echo "Downloading IntelliJ IDEA Community..."
-             # Force it to bind to 0.0.0.0 so Ingress works
              projector install --name IntelliJ --ide IDEA_COMMUNITY --port 8887 --accept-license --hostname 0.0.0.0
           fi
           
@@ -55,7 +58,6 @@ components:
           projector run IntelliJ
       # --------------------------
       endpoints:
-        # The Backdoor Route
         - name: intellij-direct
           targetPort: 8887
           attributes:
