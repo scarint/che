@@ -1,13 +1,16 @@
 schemaVersion: 2.2.2
 metadata:
-  name: intellij-brutal-fix
-  displayName: IntelliJ (Brutal Patch)
+  name: intellij-pure
+  displayName: IntelliJ (Pure Container)
   attributes:
-    app.che.eclipse.org/editor: che-incubator/che-code/latest
+    # REMOVED: app.che.eclipse.org/editor attribute.
+    # We are manually installing the editor, so we don't need Che to inject one.
+    controller.devfile.io/devworkspace-config:
+      workspace:
+        progressTimeout: "15m"
 components:
   - name: tools
     container:
-      # Use the stable UDI image (proven to run on your cluster)
       image: quay.io/devfile/universal-developer-image:ubi8-latest
       memoryLimit: 4Gi
       mountSources: true
@@ -15,7 +18,7 @@ components:
       command: ["/bin/sh", "-c"]
       args:
         - |
-          # 1. FIX IDENTITY (The "Victory" Patch)
+          # 1. FIX IDENTITY
           if ! grep -q "1234" /etc/passwd; then
             echo "Fixing Identity for UID 1234..."
             echo "user:x:1234:0:User:${HOME}:/bin/bash" >> /etc/passwd
@@ -31,34 +34,25 @@ components:
              pip3 install projector-installer --user
           fi
           
-          # 4. --- THE BRUTAL PATCH ---
-          # Target the file causing the Python 3.11 crash
+          # 4. --- THE BRUTAL PATCH (Fixes Python 3.11 Crash) ---
           SITE_PACKAGES=$HOME/.local/lib/python3.11/site-packages
           TARGET_FILE="$SITE_PACKAGES/projector_installer/products.py"
           
           if [ -f "$TARGET_FILE" ]; then
              echo "Applying Brutal Patch to $TARGET_FILE..."
-             
-             # A. Add 'field' to imports (Using wildcard to be safe)
+             # Fix imports
              if ! grep -q "from dataclasses import dataclass, field" "$TARGET_FILE"; then
                 sed -i 's/from dataclasses import dataclass.*/from dataclasses import dataclass, field/' "$TARGET_FILE"
              fi
-             
-             # B. Replace the broken mutable default line
-             # We match "ver: LooseVersion" followed by any assignment, replacing it with the factory
+             # Fix mutable default error
              sed -i 's/ver: LooseVersion = .*/ver: LooseVersion = field(default_factory=lambda: LooseVersion("0.0.0"))/' "$TARGET_FILE"
-             
-             echo "Patch applied. Verifying..."
-             grep "default_factory" "$TARGET_FILE" || echo "PATCH FAILED!"
-          else
-             echo "ERROR: products.py not found at $TARGET_FILE"
+             echo "Patch applied."
           fi
-          # ---------------------------
+          # -----------------------------------------------------
           
           # 5. INSTALL INTELLIJ
           if ! projector config show IntelliJ &> /dev/null; then
              echo "Downloading IntelliJ IDEA Community..."
-             # --hostname 0.0.0.0 is critical for Ingress access
              projector install --name IntelliJ --ide IDEA_COMMUNITY --port 8887 --accept-license --hostname 0.0.0.0
           fi
           
