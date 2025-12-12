@@ -1,7 +1,7 @@
 schemaVersion: 2.2.2
 metadata:
-  name: intellij-pure-auto
-  displayName: IntelliJ (Pure Auto)
+  name: intellij-final-victory
+  displayName: IntelliJ (Final Victory)
   attributes:
     controller.devfile.io/devworkspace-config:
       workspace:
@@ -27,38 +27,45 @@ components:
           # 2. CLEAR PORT 8887
           fuser -k 8887/tcp || true
           
-          # 3. INSTALL PROJECTOR (User Mode)
+          # 3. INSTALL PROJECTOR
           export PATH=$PATH:$HOME/.local/bin
           if ! command -v projector &> /dev/null; then
              echo "Installing JetBrains Projector..."
              pip3 install projector-installer --user
           fi
           
-          # 4. --- THE BRUTAL PATCH (Fixes Python 3.11 Crash) ---
+          # 4. PATCH PYTHON 3.11 CRASH
           SITE_PACKAGES=$HOME/.local/lib/python3.11/site-packages
           TARGET_FILE="$SITE_PACKAGES/projector_installer/products.py"
-          
           if [ -f "$TARGET_FILE" ]; then
-             echo "Applying Brutal Patch to $TARGET_FILE..."
+             echo "Applying Brutal Patch..."
              if ! grep -q "from dataclasses import dataclass, field" "$TARGET_FILE"; then
                 sed -i 's/from dataclasses import dataclass.*/from dataclasses import dataclass, field/' "$TARGET_FILE"
              fi
              sed -i 's/ver: LooseVersion = .*/ver: LooseVersion = field(default_factory=lambda: LooseVersion("0.0.0"))/' "$TARGET_FILE"
-             echo "Patch applied."
           fi
-          # -----------------------------------------------------
           
-          # 5. INSTALL INTELLIJ (With Forced Yes)
-          if ! projector config show IntelliJ &> /dev/null; then
+          # 5. INSTALL INTELLIJ (Simplified Command)
+          # We check if a config exists. If not, we install using defaults.
+          if ! projector config show &> /dev/null; then
              echo "Downloading IntelliJ IDEA Community..."
-             # Pipe 'yes' to handle stubborn GPL prompts
-             yes | projector install --name IntelliJ --ide IDEA_COMMUNITY --port 8887 --hostname 0.0.0.0
+             # Pipe 'yes' to handle license. Remove '--name' to avoid syntax errors.
+             # Only strictly required flags: IDE name and port.
+             yes | projector install IDEA_COMMUNITY
           fi
           
           # 6. RUN IT
           echo "Starting IntelliJ Projector..."
-          # We force --host 0.0.0.0 again here to be absolutely sure
-          projector run IntelliJ --host 0.0.0.0
+          # Find the config name we just installed (it usually defaults to the IDE name)
+          CONFIG_NAME=$(projector config show | grep "Config name:" | awk '{print $3}' | head -n 1)
+          
+          # If we couldn't parse the name, guess 'IntelliJ_IDEA_Community_Edition'
+          if [ -z "$CONFIG_NAME" ]; then
+             CONFIG_NAME="IntelliJ_IDEA_Community_Edition"
+          fi
+          
+          echo "Launching config: $CONFIG_NAME"
+          projector run "$CONFIG_NAME" --port 8887 --host 0.0.0.0
       # --------------------------
       endpoints:
         - name: intellij-direct
