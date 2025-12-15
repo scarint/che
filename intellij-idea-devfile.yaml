@@ -1,7 +1,7 @@
 schemaVersion: 2.2.2
 metadata:
-  name: intellij-manual-launch
-  displayName: IntelliJ (Manual Launch)
+  name: intellij-sidecar
+  displayName: IntelliJ (Sidecar Proxy)
 components:
   - name: tools
     container:
@@ -10,7 +10,7 @@ components:
       mountSources: true
       endpoints:
         - name: intellij-direct
-          targetPort: 9999
+          targetPort: 8887
           attributes:
             public: "true"
             protocol: http
@@ -23,7 +23,7 @@ components:
       args:
         - |
           set -e
-          echo ">>> [1/4] INITIALIZING ENVIRONMENT"
+          echo ">>> [1/6] INITIALIZING"
 
           # 1. FIX IDENTITY
           if ! grep -q "1234" /etc/passwd; then
@@ -31,74 +31,63 @@ components:
             echo "user:x:1234:0:User:${HOME}:/bin/bash" >> /etc/passwd
           fi
           
-          # 2. INSTALL PROJECTOR
+          # 2. INSTALL UTILITIES
+          # We need 'socat' to create the network bridge.
+          # If it's missing, we install it (or use python as a fallback)
+          if ! command -v socat &> /dev/null; then
+             echo ">>> [2/6] INSTALLING SOCAT"
+             # UDI is RHEL/CentOS based
+             sudo dnf install -y socat || echo "WARNING: Socat install failed, trying fallback..."
+          fi
+
+          # 3. INSTALL PROJECTOR & PATCH
           export PATH=$PATH:$HOME/.local/bin
           if ! command -v projector &> /dev/null; then
-             echo ">>> [2/4] INSTALLING SOFTWARE"
+             echo ">>> [3/6] INSTALLING PROJECTOR"
              pip3 install projector-installer --user
           fi
           
-          # --- THE MISSING PATCH (Restored) ---
           SITE_PACKAGES=$HOME/.local/lib/python3.11/site-packages
           TARGET_FILE="$SITE_PACKAGES/projector_installer/products.py"
           if [ -f "$TARGET_FILE" ]; then
              if ! grep -q "from dataclasses import dataclass, field" "$TARGET_FILE"; then
-                echo ">>> [2.5/4] APPLYING PYTHON 3.11 PATCH"
                 sed -i 's/from dataclasses import dataclass.*/from dataclasses import dataclass, field/' "$TARGET_FILE"
                 sed -i 's/ver: LooseVersion = .*/ver: LooseVersion = field(default_factory=lambda: LooseVersion("0.0.0"))/' "$TARGET_FILE"
              fi
           fi
-          # ------------------------------------
           
-          # 3. INSTALL INTELLIJ
-          # We check if the specific version folder exists to skip download
-          APP_PATH="$HOME/.projector/apps/idea-IC-213.6777.52"
-          
-          if [ ! -d "$APP_PATH" ]; then
-             echo ">>> [3/4] INSTALLING IDE"
+          # 4. INSTALL IDE
+          if ! projector config show IntelliJ &> /dev/null; then
+             echo ">>> [4/6] INSTALLING IDE"
              printf "y\ny\n5\n" | projector install IDEA_COMMUNITY
-          else
-             echo ">>> [3/4] FOUND EXISTING IDE"
           fi
           
-          # 4. LAUNCH MANUALLY
-          echo ">>> [4/4] STARTING JAVA SERVER"
-          
-          # Construct classpath
-          LIB_PATH="$HOME/.local/lib/python3.11/site-packages/projector_installer/bundled/server/*"
-          
-          # Verify paths exist before launching
-          if [ ! -f "$APP_PATH/jbr/bin/java" ]; then
-             echo "CRITICAL ERROR: Java binary not found at $APP_PATH/jbr/bin/java"
-             exit 1
+          # 5. START THE SIDECAR PROXY (The Fix)
+          echo ">>> [5/6] STARTING NETWORK PROXY"
+          # Listen on 0.0.0.0:8887 (Public) -> Forward to localhost:9999 (Private)
+          # We run this in the background (&)
+          if command -v socat &> /dev/null; then
+             echo "    Using socat to bridge 0.0.0.0:8887 -> 127.0.0.1:9999"
+             socat TCP-LISTEN:8887,fork,bind=0.0.0.0 TCP:127.0.0.1:9999 &
+          else
+             echo "    Using Python to bridge 0.0.0.0:8887 -> 127.0.0.1:9999"
+             # Fallback Python proxy if dnf failed
+             python3 -c "import socket,threading;
+          def fwd(s,d):
+            while True:
+              data=s.recv(4096)
+              if not data: break
+              d.sendall(data)
+          def handle(s):
+            try:
+              d=socket.socket();d.connect(('127.0.0.1',9999))
+              t1=threading.Thread(target=fwd,args=(s,d));t1.start()
+              t2=threading.Thread(target=fwd,args=(d,s));t2.start()
+            except: s.close()
+          l=socket.socket();l.bind(('0.0.0.0',8887));l.listen(5)
+          while True: c,a=l.accept();threading.Thread(target=handle,args=(c,)).start()" &
           fi
 
-          # The Command (HOST=0.0.0.0 enforced)
-          $APP_PATH/jbr/bin/java \
-            -classpath "$APP_PATH/lib/util.jar:$APP_PATH/lib/bootstrap.jar:$LIB_PATH" \
-            -Xms128m -Xmx2048m \
-            -XX:ReservedCodeCacheSize=512m \
-            -XX:+IgnoreUnrecognizedVMOptions \
-            -XX:+UseG1GC \
-            -XX:SoftRefLRUPolicyMSPerMB=50 \
-            -XX:CICompilerCount=2 \
-            -XX:+HeapDumpOnOutOfMemoryError \
-            -XX:-OmitStackTraceInFastThrow \
-            -ea \
-            -Dsun.io.useCanonCaches=false \
-            -Djdk.http.auth.tunneling.disabledSchemes="" \
-            -Djdk.attach.allowAttachSelf=true \
-            -Djdk.module.illegalAccess.silent=true \
-            -Dkotlinx.coroutines.debug=off \
-            -Dsun.tools.attach.tmp.only=true \
-            -Djb.vmOptionsFile=$APP_PATH/bin/idea64.vmoptions \
-            -Djava.system.class.loader=com.intellij.util.lang.PathClassLoader \
-            -Didea.vendor.name=JetBrains \
-            -Didea.paths.selector=IdeaIC2021.3 \
-            -Didea.platform.prefix=Idea \
-            -Didea.jre.check=true \
-            -Dsplash=true \
-            -DORG_JETBRAINS_PROJECTOR_SERVER_PORT=9999 \
-            -Dorg.jetbrains.projector.server.classToLaunch=com.intellij.idea.Main \
-            -DORG_JETBRAINS_PROJECTOR_SERVER_HOST=0.0.0.0 \
-            org.jetbrains.projector.server.ProjectorLauncher
+          # 6. LAUNCH PROJECTOR (On Localhost:9999)
+          echo ">>> [6/6] LAUNCHING SERVER"
+          projector run IntelliJ
