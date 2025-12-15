@@ -1,7 +1,7 @@
 schemaVersion: 2.2.2
 metadata:
-  name: intellij-nuclear
-  displayName: IntelliJ (Nuclear Option)
+  name: intellij-env-override
+  displayName: IntelliJ (Env Override)
   attributes:
     controller.devfile.io/devworkspace-config:
       workspace:
@@ -12,14 +12,35 @@ components:
       image: quay.io/devfile/universal-developer-image:ubi8-latest
       memoryLimit: 4Gi
       mountSources: true
+      # --- ENVIRONMENT VARIABLES (The Ultimate Override) ---
+      # These force the Java process to listen on the correct port/host
+      # regardless of what the internal config files say.
+      env:
+        - name: HOME
+          value: /projects
+        - name: ORG_JETBRAINS_PROJECTOR_SERVER_PORT
+          value: "8887"
+        - name: ORG_JETBRAINS_PROJECTOR_SERVER_HOST
+          value: "0.0.0.0"
+      # -----------------------------------------------------
+      endpoints:
+        - name: intellij-direct
+          targetPort: 8887
+          attributes:
+            public: "true"
+            protocol: http
+            secure: "false"
+            discoverable: "true"
       command: ["/bin/sh", "-c"]
       args:
         - |
           set -e
           
+          echo ">>> STARTUP: Initializing..."
+
           # 1. FIX IDENTITY
           if ! grep -q "1234" /etc/passwd; then
-            echo "Fixing Identity for UID 1234..."
+            echo ">>> Fixing Identity for UID 1234..."
             echo "user:x:1234:0:User:${HOME}:/bin/bash" >> /etc/passwd
           fi
           
@@ -29,78 +50,35 @@ components:
           # 3. INSTALL PROJECTOR
           export PATH=$PATH:$HOME/.local/bin
           if ! command -v projector &> /dev/null; then
-             echo "Installing JetBrains Projector..."
+             echo ">>> Installing JetBrains Projector..."
              pip3 install projector-installer --user
           fi
           
-          # 4. PATCH PYTHON
+          # 4. PATCH PYTHON (Crucial for 3.11)
           SITE_PACKAGES=$HOME/.local/lib/python3.11/site-packages
           TARGET_FILE="$SITE_PACKAGES/projector_installer/products.py"
           if [ -f "$TARGET_FILE" ]; then
              if ! grep -q "from dataclasses import dataclass, field" "$TARGET_FILE"; then
-                echo "Applying Python 3.11 Patch..."
+                echo ">>> Applying Python 3.11 Patch..."
                 sed -i 's/from dataclasses import dataclass.*/from dataclasses import dataclass, field/' "$TARGET_FILE"
                 sed -i 's/ver: LooseVersion = .*/ver: LooseVersion = field(default_factory=lambda: LooseVersion("0.0.0"))/' "$TARGET_FILE"
              fi
           fi
           
-          # 5. INSTALL INTELLIJ (Skipped if config exists)
-          CONFIG_DIR="$HOME/.projector/configs"
-          if [ -z "$(ls -A $CONFIG_DIR 2>/dev/null)" ]; then
-             echo "Navigating Installer Menu..."
-             printf "y\ny\n5\n" | projector install IDEA_COMMUNITY
+          # 5. INSTALL INTELLIJ (With Error Suppression)
+          # We check if config exists. If not, we install.
+          if ! projector config show &> /dev/null; then
+             echo ">>> Navigating Installer Menu..."
+             # || true prevents the script from crashing if the installer returns a warning code
+             printf "y\ny\n5\n" | projector install IDEA_COMMUNITY || true
           fi
           
-          # 6. LOCATE CONFIG ON DISK
-          echo "Locating configuration directory..."
-          # Grab the first folder found in the configs directory (e.g. "IntelliJ")
-          CONFIG_NAME=$(ls "$CONFIG_DIR" | head -n 1)
+          # 6. RUN IT
+          echo ">>> Launching IntelliJ..."
+          echo ">>> Env Vars: PORT=$ORG_JETBRAINS_PROJECTOR_SERVER_PORT HOST=$ORG_JETBRAINS_PROJECTOR_SERVER_HOST"
           
-          if [ -z "$CONFIG_NAME" ]; then
-             echo "CRITICAL ERROR: No configuration folder found in $CONFIG_DIR"
-             exit 1
-          fi
+          # We don't care about the config name anymore. 
+          # The ENV vars will force the settings on whatever config loads.
+          # We assume the default config name "IntelliJ" exists from step 5.
           
-          echo "Found Config: $CONFIG_NAME"
-          FULL_INI_PATH="$CONFIG_DIR/$CONFIG_NAME/config.ini"
-          
-          # 7. NUCLEAR PATCH: REWRITE CONFIG.INI
-          # This forces the settings at the file level, overriding defaults.
-          if [ -f "$FULL_INI_PATH" ]; then
-             echo "Rewriting $FULL_INI_PATH..."
-             sed -i 's/PORT = .*/PORT = 8887/' "$FULL_INI_PATH"
-             sed -i 's/HOST = .*/HOST = 0.0.0.0/' "$FULL_INI_PATH"
-             
-             # Verify the surgery was successful
-             grep "PORT =" "$FULL_INI_PATH"
-             grep "HOST =" "$FULL_INI_PATH"
-          else
-             echo "WARNING: Config INI not found. Creating one..."
-             echo "[PROJECTOR]" > "$FULL_INI_PATH"
-             echo "PORT = 8887" >> "$FULL_INI_PATH"
-             echo "HOST = 0.0.0.0" >> "$FULL_INI_PATH"
-          fi
-          
-          # 8. RUN IT
-          echo "Launching IntelliJ..."
-          projector run "$CONFIG_NAME"
-      endpoints:
-        - name: intellij-direct
-          targetPort: 8887
-          attributes:
-            public: "true"
-            protocol: http
-            secure: "false"
-            discoverable: "true"
-      env:
-        - name: HOME
-          value: /projects
-commands:
-  - id: run-app
-    exec:
-      commandLine: python app.py
-      workingDir: ${PROJECT_SOURCE}
-      component: tools
-      group:
-        kind: run
-        isDefault: true
+          projector run IntelliJ
