@@ -2,10 +2,6 @@ schemaVersion: 2.2.2
 metadata:
   name: intellij-manual-launch
   displayName: IntelliJ (Manual Launch)
-  attributes:
-    controller.devfile.io/devworkspace-config:
-      workspace:
-        progressTimeout: "15m"
 components:
   - name: tools
     container:
@@ -14,6 +10,7 @@ components:
       mountSources: true
       endpoints:
         - name: intellij-direct
+          # We expose 9999 because that is what the app defaults to
           targetPort: 9999
           attributes:
             public: "true"
@@ -60,7 +57,7 @@ components:
           # We construct the classpath manually based on where Projector installs things
           LIB_PATH="$HOME/.local/lib/python3.11/site-packages/projector_installer/bundled/server/*"
           
-          # This giant command is reconstructed from your 'ps aux' output
+          # This giant command is reconstructed from your previous logs
           # but with HOST=0.0.0.0 enforced.
           
           $APP_PATH/jbr/bin/java \
