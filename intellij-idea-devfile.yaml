@@ -1,7 +1,7 @@
 schemaVersion: 2.2.2
 metadata:
-  name: intellij-official
-  displayName: IntelliJ (Official Image)
+  name: intellij-resurrection
+  displayName: IntelliJ (Resurrection)
   attributes:
     controller.devfile.io/devworkspace-config:
       workspace:
@@ -9,26 +9,13 @@ metadata:
 components:
   - name: tools
     container:
-      # The official image with everything pre-installed
-      image: jetbrains/projector-idea-c:latest
+      image: quay.io/devfile/universal-developer-image:ubi8-latest
       memoryLimit: 4Gi
       mountSources: true
-      
-      # --- THE ONLY CONFIGURATION NEEDED ---
+      # Override defaults to ensure clean environment
       env:
-        # 1. Force the container to treat your persistent volume as Home.
-        # This solves 100% of the permission/crash issues.
         - name: HOME
           value: /projects
-          
-        # 2. Force the server to listen on all interfaces so Ingress works.
-        - name: ORG_JETBRAINS_PROJECTOR_SERVER_HOST
-          value: "0.0.0.0"
-          
-        # 3. Force the specific port we exposed.
-        - name: ORG_JETBRAINS_PROJECTOR_SERVER_PORT
-          value: "8887"
-
       endpoints:
         - name: intellij-direct
           targetPort: 8887
@@ -37,12 +24,72 @@ components:
             protocol: http
             secure: "false"
             discoverable: "true"
-            
-      # Override the entrypoint to ensure it picks up our Env Vars
-      # and doesn't try to run its own internal setup scripts that might fail.
       command: ["/bin/sh", "-c"]
       args:
         - |
-          echo "Starting Official JetBrains Projector..."
-          # We just run the server. No installation, no patching.
-          projector run
+          set -e
+          echo ">>> [1/6] INITIALIZING ENVIRONMENT"
+
+          # 1. FIX IDENTITY
+          if ! grep -q "1234" /etc/passwd; then
+            echo "    Fixing Identity for UID 1234..."
+            echo "user:x:1234:0:User:${HOME}:/bin/bash" >> /etc/passwd
+          fi
+          
+          # 2. CLEAR PORT
+          fuser -k 8887/tcp || true
+          
+          # 3. INSTALL PROJECTOR
+          export PATH=$PATH:$HOME/.local/bin
+          if ! command -v projector &> /dev/null; then
+             echo ">>> [2/6] INSTALLING PROJECTOR SOFTWARE"
+             pip3 install projector-installer --user
+          fi
+          
+          # 4. PATCH PYTHON (Crucial for 3.11)
+          SITE_PACKAGES=$HOME/.local/lib/python3.11/site-packages
+          TARGET_FILE="$SITE_PACKAGES/projector_installer/products.py"
+          if [ -f "$TARGET_FILE" ]; then
+             if ! grep -q "from dataclasses import dataclass, field" "$TARGET_FILE"; then
+                echo "    Applying Python 3.11 Compatibility Patch..."
+                sed -i 's/from dataclasses import dataclass.*/from dataclasses import dataclass, field/' "$TARGET_FILE"
+                sed -i 's/ver: LooseVersion = .*/ver: LooseVersion = field(default_factory=lambda: LooseVersion("0.0.0"))/' "$TARGET_FILE"
+             fi
+          fi
+          
+          # 5. FRESH INSTALL (SCORCHED EARTH)
+          # If we don't have a valid config, wipe and reinstall to be safe
+          CONFIG_DIR="$HOME/.projector/configs/IntelliJ"
+          if [ ! -d "$CONFIG_DIR" ]; then
+             echo ">>> [3/6] INSTALLING INTELLIJ IDE"
+             printf "y\ny\n5\n" | projector install IDEA_COMMUNITY
+          else
+             echo ">>> [3/6] FOUND EXISTING INSTALLATION"
+          fi
+          
+          # 6. FORCE CONFIGURATION (The Fix)
+          echo ">>> [4/6] OVERWRITING CONFIGURATION"
+          
+          # Ensure directory exists (it should after install)
+          mkdir -p "$CONFIG_DIR"
+          
+          # DELETE the old config.ini and write a NEW one.
+          # This guarantees no "localhost:9999" defaults survive.
+          rm -f "$CONFIG_DIR/config.ini"
+          
+          echo "[PROJECTOR]" > "$CONFIG_DIR/config.ini"
+          echo "PORT = 8887" >> "$CONFIG_DIR/config.ini"
+          echo "HOST = 0.0.0.0" >> "$CONFIG_DIR/config.ini"
+          echo "HANDSHAKE_TOKEN =" >> "$CONFIG_DIR/config.ini"
+          echo "RO_HANDSHAKE_TOKEN =" >> "$CONFIG_DIR/config.ini"
+          
+          # Verify content
+          echo "    Current Config Content:"
+          cat "$CONFIG_DIR/config.ini"
+          
+          # 7. LAUNCH
+          echo ">>> [5/6] LAUNCHING SERVER"
+          echo "    Listening on 0.0.0.0:8887..."
+          
+          # We use the config name "IntelliJ" which matches the folder name
+          projector run IntelliJ
