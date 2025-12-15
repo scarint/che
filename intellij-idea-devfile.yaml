@@ -1,7 +1,7 @@
 schemaVersion: 2.2.2
 metadata:
-  name: intellij-script-hack
-  displayName: IntelliJ (Script Hack)
+  name: intellij-manual-gear
+  displayName: IntelliJ (Manual Gear)
   attributes:
     controller.devfile.io/devworkspace-config:
       workspace:
@@ -14,7 +14,6 @@ components:
       mountSources: true
       endpoints:
         - name: intellij-direct
-          # We use 9999 because that is the hardcoded default we will expose
           targetPort: 9999
           attributes:
             public: "true"
@@ -43,47 +42,40 @@ components:
              pip3 install projector-installer --user
           fi
           
-          # 3. PATCH PYTHON (Required for 3.11)
+          # 3. PATCH PYTHON
           SITE_PACKAGES=$HOME/.local/lib/python3.11/site-packages
           TARGET_FILE="$SITE_PACKAGES/projector_installer/products.py"
           if [ -f "$TARGET_FILE" ]; then
              if ! grep -q "from dataclasses import dataclass, field" "$TARGET_FILE"; then
-                echo "    Patching Python 3.11..."
+                echo "    Patching Python..."
                 sed -i 's/from dataclasses import dataclass.*/from dataclasses import dataclass, field/' "$TARGET_FILE"
                 sed -i 's/ver: LooseVersion = .*/ver: LooseVersion = field(default_factory=lambda: LooseVersion("0.0.0"))/' "$TARGET_FILE"
              fi
           fi
           
           # 4. INSTALL INTELLIJ
-          # If the run script doesn't exist, we must install
-          RUN_SCRIPT="$HOME/.projector/configs/IntelliJ/run.sh"
-          
-          if [ ! -f "$RUN_SCRIPT" ]; then
+          if ! projector config show IntelliJ &> /dev/null; then
              echo ">>> [3/5] INSTALLING IDE"
              printf "y\ny\n5\n" | projector install IDEA_COMMUNITY
-          else
-             echo ">>> [3/5] FOUND EXISTING INSTALLATION"
           fi
           
-          # 5. HACK THE RUN SCRIPT (The Fix)
-          echo ">>> [4/5] PATCHING HOST BINDING"
+          # 5. GENERATE & HACK COMMAND (The Fix)
+          echo ">>> [4/5] GENERATING LAUNCH COMMAND"
           
-          if [ -f "$RUN_SCRIPT" ]; then
-             # This command finds 'localhost' in the launch arguments and replaces it with '0.0.0.0'
-             sed -i 's/SERVER_HOST=localhost/SERVER_HOST=0.0.0.0/g' "$RUN_SCRIPT"
-             
-             # Also verify port is 9999 just in case
-             sed -i 's/SERVER_PORT=[0-9]*/SERVER_PORT=9999/g' "$RUN_SCRIPT"
-             
-             echo "    Host binding patched to 0.0.0.0"
-          else
-             echo "CRITICAL ERROR: Run script not found at $RUN_SCRIPT"
-             ls -R "$HOME/.projector"
+          # Dry run outputs the command but doesn't run it
+          # We grep for 'java' to find the command line
+          RAW_CMD=$(projector run IntelliJ --dry-run | grep "java")
+          
+          if [ -z "$RAW_CMD" ]; then
+             echo "CRITICAL ERROR: Could not generate dry-run command."
              exit 1
           fi
           
-          # 6. EXECUTE DIRECTLY
-          echo ">>> [5/5] LAUNCHING DIRECTLY"
-          # We use 'sh' to run the script directly, bypassing the python wrapper
-          # and any 'localhost' defaults it might try to force.
-          /bin/sh "$RUN_SCRIPT"
+          # Replace localhost with 0.0.0.0
+          FIXED_CMD=$(echo "$RAW_CMD" | sed 's/SERVER_HOST=localhost/SERVER_HOST=0.0.0.0/g')
+          
+          echo ">>> [5/5] LAUNCHING MANUALLY"
+          echo "    Cmd: $FIXED_CMD"
+          
+          # Execute the hacked command
+          eval "$FIXED_CMD"
