@@ -10,7 +10,6 @@ components:
       mountSources: true
       endpoints:
         - name: intellij-direct
-          # We expose 9999 because that is what the app defaults to
           targetPort: 9999
           attributes:
             public: "true"
@@ -32,12 +31,24 @@ components:
             echo "user:x:1234:0:User:${HOME}:/bin/bash" >> /etc/passwd
           fi
           
-          # 2. INSTALL PROJECTOR (Needed for libs)
+          # 2. INSTALL PROJECTOR
           export PATH=$PATH:$HOME/.local/bin
           if ! command -v projector &> /dev/null; then
              echo ">>> [2/4] INSTALLING SOFTWARE"
              pip3 install projector-installer --user
           fi
+          
+          # --- THE MISSING PATCH (Restored) ---
+          SITE_PACKAGES=$HOME/.local/lib/python3.11/site-packages
+          TARGET_FILE="$SITE_PACKAGES/projector_installer/products.py"
+          if [ -f "$TARGET_FILE" ]; then
+             if ! grep -q "from dataclasses import dataclass, field" "$TARGET_FILE"; then
+                echo ">>> [2.5/4] APPLYING PYTHON 3.11 PATCH"
+                sed -i 's/from dataclasses import dataclass.*/from dataclasses import dataclass, field/' "$TARGET_FILE"
+                sed -i 's/ver: LooseVersion = .*/ver: LooseVersion = field(default_factory=lambda: LooseVersion("0.0.0"))/' "$TARGET_FILE"
+             fi
+          fi
+          # ------------------------------------
           
           # 3. INSTALL INTELLIJ
           # We check if the specific version folder exists to skip download
@@ -45,21 +56,24 @@ components:
           
           if [ ! -d "$APP_PATH" ]; then
              echo ">>> [3/4] INSTALLING IDE"
-             # This downloads the IDE to ~/.projector/apps/...
              printf "y\ny\n5\n" | projector install IDEA_COMMUNITY
           else
              echo ">>> [3/4] FOUND EXISTING IDE"
           fi
           
-          # 4. LAUNCH MANUALLY (The "I'll do it myself" Method)
+          # 4. LAUNCH MANUALLY
           echo ">>> [4/4] STARTING JAVA SERVER"
           
-          # We construct the classpath manually based on where Projector installs things
+          # Construct classpath
           LIB_PATH="$HOME/.local/lib/python3.11/site-packages/projector_installer/bundled/server/*"
           
-          # This giant command is reconstructed from your previous logs
-          # but with HOST=0.0.0.0 enforced.
-          
+          # Verify paths exist before launching
+          if [ ! -f "$APP_PATH/jbr/bin/java" ]; then
+             echo "CRITICAL ERROR: Java binary not found at $APP_PATH/jbr/bin/java"
+             exit 1
+          fi
+
+          # The Command (HOST=0.0.0.0 enforced)
           $APP_PATH/jbr/bin/java \
             -classpath "$APP_PATH/lib/util.jar:$APP_PATH/lib/bootstrap.jar:$LIB_PATH" \
             -Xms128m -Xmx2048m \
