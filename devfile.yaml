@@ -56,8 +56,3 @@ commands:
       group:
         kind: run
         isDefault: true
-starterProjects:
-  - name: flask-example
-    git:
-      remotes:
-        origin: https://github.com/devfile-samples/python-ex
