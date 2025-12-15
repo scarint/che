@@ -1,6 +1,8 @@
 schemaVersion: 2.2.2
 metadata:
   name: python-vscode-minimal
+  annotations:
+    che.eclipse.org/che-editor: che-incubator/che-code/next
 components:
   - name: py
     container:
@@ -11,13 +13,3 @@ components:
         - name: DEBUG_PORT
           value: "5858"
       # no endpoints here
-
-  - name: che-code
-    container:
-      image: quay.io/che-incubator/che-code:next
-      mountSources: true
-      memoryLimit: 1Gi
-      endpoints:
-        - name: code
-          targetPort: 3100
-          protocol: https
