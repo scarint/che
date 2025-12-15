@@ -1,7 +1,7 @@
 schemaVersion: 2.2.2
 metadata:
-  name: intellij-config-patch
-  displayName: IntelliJ (Config Patch)
+  name: intellij-bulletproof
+  displayName: IntelliJ (Bulletproof)
   attributes:
     controller.devfile.io/devworkspace-config:
       workspace:
@@ -45,33 +45,34 @@ components:
           fi
           
           # 5. INSTALL INTELLIJ
-          if ! projector config show &> /dev/null; then
+          # If config doesn't exist, run the interactive installer
+          if ! projector config show IntelliJ &> /dev/null; then
              echo "Navigating Installer Menu..."
              printf "y\ny\n5\n" | projector install IDEA_COMMUNITY
           fi
           
-          # 6. --- THE CONFIG PATCH (Force 0.0.0.0:8887) ---
-          # We manually edit the INI file because CLI flags are being ignored
-          CONFIG_INI="$HOME/.projector/configs/IntelliJ/config.ini"
+          # 6. RUN IT (The Bulletproof Logic)
+          echo "Starting Launch Sequence..."
           
-          if [ -f "$CONFIG_INI" ]; then
-             echo "Patching Projector Config at $CONFIG_INI..."
-             # Replace PORT=... with PORT=8887
-             sed -i 's/PORT = .*/PORT = 8887/' "$CONFIG_INI"
-             # Replace HOST=... with HOST=0.0.0.0
-             sed -i 's/HOST = .*/HOST = 0.0.0.0/' "$CONFIG_INI"
-             
-             # Verify patch
-             grep "PORT =" "$CONFIG_INI"
-             grep "HOST =" "$CONFIG_INI"
+          # Attempt 1: Try the known default name "IntelliJ"
+          if projector config show IntelliJ &> /dev/null; then
+             echo "Found config 'IntelliJ'. Launching..."
+             projector run IntelliJ --port 8887 --host 0.0.0.0
           else
-             echo "WARNING: Config INI not found at $CONFIG_INI"
+             # Attempt 2: Find whatever config actually exists in the folder
+             echo "Config 'IntelliJ' not found via CLI. Checking disk..."
+             CONFIG_DIR="$HOME/.projector/configs"
+             FOUND_CONFIG=$(ls "$CONFIG_DIR" | head -n 1)
+             
+             if [ -n "$FOUND_CONFIG" ]; then
+                echo "Found config directory: $FOUND_CONFIG. Launching..."
+                projector run "$FOUND_CONFIG" --port 8887 --host 0.0.0.0
+             else
+                echo "CRITICAL FAILURE: No configurations found in $CONFIG_DIR"
+                ls -la "$HOME/.projector"
+                exit 1
+             fi
           fi
-          # ------------------------------------------------
-          
-          # 7. RUN IT
-          echo "Launching IntelliJ..."
-          projector run IntelliJ
       endpoints:
         - name: intellij-direct
           targetPort: 8887
