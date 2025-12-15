@@ -1,7 +1,7 @@
 schemaVersion: 2.2.2
 metadata:
-  name: intellij-manual-gear
-  displayName: IntelliJ (Manual Gear)
+  name: intellij-manual-launch
+  displayName: IntelliJ (Manual Launch)
   attributes:
     controller.devfile.io/devworkspace-config:
       workspace:
@@ -27,7 +27,7 @@ components:
       args:
         - |
           set -e
-          echo ">>> [1/5] INITIALIZING ENVIRONMENT"
+          echo ">>> [1/4] INITIALIZING ENVIRONMENT"
 
           # 1. FIX IDENTITY
           if ! grep -q "1234" /etc/passwd; then
@@ -35,47 +35,59 @@ components:
             echo "user:x:1234:0:User:${HOME}:/bin/bash" >> /etc/passwd
           fi
           
-          # 2. INSTALL PROJECTOR
+          # 2. INSTALL PROJECTOR (Needed for libs)
           export PATH=$PATH:$HOME/.local/bin
           if ! command -v projector &> /dev/null; then
-             echo ">>> [2/5] INSTALLING SOFTWARE"
+             echo ">>> [2/4] INSTALLING SOFTWARE"
              pip3 install projector-installer --user
           fi
           
-          # 3. PATCH PYTHON
-          SITE_PACKAGES=$HOME/.local/lib/python3.11/site-packages
-          TARGET_FILE="$SITE_PACKAGES/projector_installer/products.py"
-          if [ -f "$TARGET_FILE" ]; then
-             if ! grep -q "from dataclasses import dataclass, field" "$TARGET_FILE"; then
-                echo "    Patching Python..."
-                sed -i 's/from dataclasses import dataclass.*/from dataclasses import dataclass, field/' "$TARGET_FILE"
-                sed -i 's/ver: LooseVersion = .*/ver: LooseVersion = field(default_factory=lambda: LooseVersion("0.0.0"))/' "$TARGET_FILE"
-             fi
-          fi
+          # 3. INSTALL INTELLIJ
+          # We check if the specific version folder exists to skip download
+          APP_PATH="$HOME/.projector/apps/idea-IC-213.6777.52"
           
-          # 4. INSTALL INTELLIJ
-          if ! projector config show IntelliJ &> /dev/null; then
-             echo ">>> [3/5] INSTALLING IDE"
+          if [ ! -d "$APP_PATH" ]; then
+             echo ">>> [3/4] INSTALLING IDE"
+             # This downloads the IDE to ~/.projector/apps/...
              printf "y\ny\n5\n" | projector install IDEA_COMMUNITY
+          else
+             echo ">>> [3/4] FOUND EXISTING IDE"
           fi
           
-          # 5. GENERATE & HACK COMMAND (The Fix)
-          echo ">>> [4/5] GENERATING LAUNCH COMMAND"
+          # 4. LAUNCH MANUALLY (The "I'll do it myself" Method)
+          echo ">>> [4/4] STARTING JAVA SERVER"
           
-          # Dry run outputs the command but doesn't run it
-          # We grep for 'java' to find the command line
-          RAW_CMD=$(projector run IntelliJ --dry-run | grep "java")
+          # We construct the classpath manually based on where Projector installs things
+          LIB_PATH="$HOME/.local/lib/python3.11/site-packages/projector_installer/bundled/server/*"
           
-          if [ -z "$RAW_CMD" ]; then
-             echo "CRITICAL ERROR: Could not generate dry-run command."
-             exit 1
-          fi
+          # This giant command is reconstructed from your 'ps aux' output
+          # but with HOST=0.0.0.0 enforced.
           
-          # Replace localhost with 0.0.0.0
-          FIXED_CMD=$(echo "$RAW_CMD" | sed 's/SERVER_HOST=localhost/SERVER_HOST=0.0.0.0/g')
-          
-          echo ">>> [5/5] LAUNCHING MANUALLY"
-          echo "    Cmd: $FIXED_CMD"
-          
-          # Execute the hacked command
-          eval "$FIXED_CMD"
+          $APP_PATH/jbr/bin/java \
+            -classpath "$APP_PATH/lib/util.jar:$APP_PATH/lib/bootstrap.jar:$LIB_PATH" \
+            -Xms128m -Xmx2048m \
+            -XX:ReservedCodeCacheSize=512m \
+            -XX:+IgnoreUnrecognizedVMOptions \
+            -XX:+UseG1GC \
+            -XX:SoftRefLRUPolicyMSPerMB=50 \
+            -XX:CICompilerCount=2 \
+            -XX:+HeapDumpOnOutOfMemoryError \
+            -XX:-OmitStackTraceInFastThrow \
+            -ea \
+            -Dsun.io.useCanonCaches=false \
+            -Djdk.http.auth.tunneling.disabledSchemes="" \
+            -Djdk.attach.allowAttachSelf=true \
+            -Djdk.module.illegalAccess.silent=true \
+            -Dkotlinx.coroutines.debug=off \
+            -Dsun.tools.attach.tmp.only=true \
+            -Djb.vmOptionsFile=$APP_PATH/bin/idea64.vmoptions \
+            -Djava.system.class.loader=com.intellij.util.lang.PathClassLoader \
+            -Didea.vendor.name=JetBrains \
+            -Didea.paths.selector=IdeaIC2021.3 \
+            -Didea.platform.prefix=Idea \
+            -Didea.jre.check=true \
+            -Dsplash=true \
+            -DORG_JETBRAINS_PROJECTOR_SERVER_PORT=9999 \
+            -Dorg.jetbrains.projector.server.classToLaunch=com.intellij.idea.Main \
+            -DORG_JETBRAINS_PROJECTOR_SERVER_HOST=0.0.0.0 \
+            org.jetbrains.projector.server.ProjectorLauncher
