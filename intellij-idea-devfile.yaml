@@ -1,7 +1,7 @@
 schemaVersion: 2.2.2
 metadata:
-  name: intellij-env-override
-  displayName: IntelliJ (Env Override)
+  name: intellij-official
+  displayName: IntelliJ (Official Image)
   attributes:
     controller.devfile.io/devworkspace-config:
       workspace:
@@ -9,20 +9,26 @@ metadata:
 components:
   - name: tools
     container:
-      image: quay.io/devfile/universal-developer-image:ubi8-latest
+      # The official image with everything pre-installed
+      image: jetbrains/projector-idea-c:latest
       memoryLimit: 4Gi
       mountSources: true
-      # --- ENVIRONMENT VARIABLES (The Ultimate Override) ---
-      # These force the Java process to listen on the correct port/host
-      # regardless of what the internal config files say.
+      
+      # --- THE ONLY CONFIGURATION NEEDED ---
       env:
+        # 1. Force the container to treat your persistent volume as Home.
+        # This solves 100% of the permission/crash issues.
         - name: HOME
           value: /projects
-        - name: ORG_JETBRAINS_PROJECTOR_SERVER_PORT
-          value: "8887"
+          
+        # 2. Force the server to listen on all interfaces so Ingress works.
         - name: ORG_JETBRAINS_PROJECTOR_SERVER_HOST
           value: "0.0.0.0"
-      # -----------------------------------------------------
+          
+        # 3. Force the specific port we exposed.
+        - name: ORG_JETBRAINS_PROJECTOR_SERVER_PORT
+          value: "8887"
+
       endpoints:
         - name: intellij-direct
           targetPort: 8887
@@ -31,54 +37,12 @@ components:
             protocol: http
             secure: "false"
             discoverable: "true"
+            
+      # Override the entrypoint to ensure it picks up our Env Vars
+      # and doesn't try to run its own internal setup scripts that might fail.
       command: ["/bin/sh", "-c"]
       args:
         - |
-          set -e
-          
-          echo ">>> STARTUP: Initializing..."
-
-          # 1. FIX IDENTITY
-          if ! grep -q "1234" /etc/passwd; then
-            echo ">>> Fixing Identity for UID 1234..."
-            echo "user:x:1234:0:User:${HOME}:/bin/bash" >> /etc/passwd
-          fi
-          
-          # 2. CLEAR PORT
-          fuser -k 8887/tcp || true
-          
-          # 3. INSTALL PROJECTOR
-          export PATH=$PATH:$HOME/.local/bin
-          if ! command -v projector &> /dev/null; then
-             echo ">>> Installing JetBrains Projector..."
-             pip3 install projector-installer --user
-          fi
-          
-          # 4. PATCH PYTHON (Crucial for 3.11)
-          SITE_PACKAGES=$HOME/.local/lib/python3.11/site-packages
-          TARGET_FILE="$SITE_PACKAGES/projector_installer/products.py"
-          if [ -f "$TARGET_FILE" ]; then
-             if ! grep -q "from dataclasses import dataclass, field" "$TARGET_FILE"; then
-                echo ">>> Applying Python 3.11 Patch..."
-                sed -i 's/from dataclasses import dataclass.*/from dataclasses import dataclass, field/' "$TARGET_FILE"
-                sed -i 's/ver: LooseVersion = .*/ver: LooseVersion = field(default_factory=lambda: LooseVersion("0.0.0"))/' "$TARGET_FILE"
-             fi
-          fi
-          
-          # 5. INSTALL INTELLIJ (With Error Suppression)
-          # We check if config exists. If not, we install.
-          if ! projector config show &> /dev/null; then
-             echo ">>> Navigating Installer Menu..."
-             # || true prevents the script from crashing if the installer returns a warning code
-             printf "y\ny\n5\n" | projector install IDEA_COMMUNITY || true
-          fi
-          
-          # 6. RUN IT
-          echo ">>> Launching IntelliJ..."
-          echo ">>> Env Vars: PORT=$ORG_JETBRAINS_PROJECTOR_SERVER_PORT HOST=$ORG_JETBRAINS_PROJECTOR_SERVER_HOST"
-          
-          # We don't care about the config name anymore. 
-          # The ENV vars will force the settings on whatever config loads.
-          # We assume the default config name "IntelliJ" exists from step 5.
-          
-          projector run IntelliJ
+          echo "Starting Official JetBrains Projector..."
+          # We just run the server. No installation, no patching.
+          projector run
